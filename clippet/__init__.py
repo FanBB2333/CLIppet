@@ -4,10 +4,18 @@ from clippet.adapters import ClaudeAdapter, CodexAdapter, QoderAdapter
 from clippet.config.registry import (
     AdapterConfig,
     ClippetConfig,
+    CredentialProfileConfig,
     create_runner_from_config,
     load_config,
 )
-from clippet.models import AgentRequest, AgentResult, ToolCallRecord
+from clippet.isolation import (
+    CredentialProvider,
+    CredentialSet,
+    EnvVarCredentialProvider,
+    FileCredentialProvider,
+    IsolatedEnvironment,
+)
+from clippet.models import AgentRequest, AgentResult, IsolationConfig, ToolCallRecord
 from clippet.orchestrator import ClippetRunner
 from clippet.protocols import ClippetAdapter
 
@@ -17,7 +25,13 @@ __all__ = [
     # Models
     "AgentRequest",
     "AgentResult",
+    "IsolationConfig",
     "ToolCallRecord",
+    "IsolatedEnvironment",
+    "CredentialProvider",
+    "FileCredentialProvider",
+    "EnvVarCredentialProvider",
+    "CredentialSet",
     # Protocol
     "ClippetAdapter",
     # Adapters
@@ -29,6 +43,7 @@ __all__ = [
     # Config
     "AdapterConfig",
     "ClippetConfig",
+    "CredentialProfileConfig",
     "load_config",
     "create_runner_from_config",
     # Version

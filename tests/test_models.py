@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from clippet.models import AgentRequest, AgentResult, ToolCallRecord
+from clippet.models import AgentRequest, AgentResult, IsolationConfig, ToolCallRecord
 
 
 class TestToolCallRecord:
@@ -66,13 +66,18 @@ class TestAgentRequest:
         assert request.model is None
         assert request.allowed_tools is None
         assert request.extra_args is None
+        assert request.isolation is None
 
     def test_creation_with_all_fields(self):
         """Test creating an AgentRequest with all fields specified."""
         workspace = Path("/tmp/workspace")
         tools = ["read_file", "write_file"]
         extra = {"verbose": True}
-        
+        isolation = IsolationConfig(
+            env_overrides={"TEST_TOKEN": "abc"},
+            persist_sandbox=True,
+        )
+
         request = AgentRequest(
             task_prompt="Implement feature X",
             workspace_dir=workspace,
@@ -80,6 +85,7 @@ class TestAgentRequest:
             model="gpt-4",
             allowed_tools=tools,
             extra_args=extra,
+            isolation=isolation,
         )
         
         assert request.task_prompt == "Implement feature X"
@@ -88,6 +94,7 @@ class TestAgentRequest:
         assert request.model == "gpt-4"
         assert request.allowed_tools == tools
         assert request.extra_args == extra
+        assert request.isolation == isolation
 
     def test_workspace_dir_as_path(self):
         """Test that workspace_dir is properly converted to Path."""
@@ -99,6 +106,48 @@ class TestAgentRequest:
         
         assert isinstance(request.workspace_dir, Path)
         assert str(request.workspace_dir) == "/some/path"
+
+
+class TestIsolationConfig:
+    """Tests for IsolationConfig model."""
+
+    def test_creation_with_defaults(self):
+        """Test creating an IsolationConfig with default values."""
+        isolation = IsolationConfig()
+
+        assert isolation.credential_files == {}
+        assert isolation.env_overrides == {}
+        assert isolation.env_whitelist is None
+        assert isolation.env_blacklist is None
+        assert isolation.persist_sandbox is False
+
+    def test_merge_with_override(self):
+        """Test merging request isolation over adapter defaults."""
+        base = IsolationConfig(
+            credential_files={".claude/settings.json": "/tmp/default-settings.json"},
+            env_overrides={"API_KEY": "default", "LOG_LEVEL": "info"},
+            env_whitelist=["PATH"],
+        )
+        override = IsolationConfig(
+            credential_files={".codex/auth.json": "/tmp/request-auth.json"},
+            env_overrides={"API_KEY": "request"},
+            env_blacklist=["SECRET_TOKEN"],
+            persist_sandbox=True,
+        )
+
+        merged = base.merged_with(override)
+
+        assert merged.credential_files == {
+            ".claude/settings.json": "/tmp/default-settings.json",
+            ".codex/auth.json": "/tmp/request-auth.json",
+        }
+        assert merged.env_overrides == {
+            "API_KEY": "request",
+            "LOG_LEVEL": "info",
+        }
+        assert merged.env_whitelist == ["PATH"]
+        assert merged.env_blacklist == ["SECRET_TOKEN"]
+        assert merged.persist_sandbox is True
 
 
 class TestAgentResult:
