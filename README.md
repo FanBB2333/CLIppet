@@ -221,7 +221,7 @@ class MyAdapter(BaseSubprocessAdapter):
 ## Development
 
 ```bash
-git clone https://github.com/L1ght/CLIppet.git
+git clone https://github.com/FanBB2333/CLIppet.git
 cd CLIppet
 pip install -e ".[dev]"
 pytest
