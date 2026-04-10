@@ -135,17 +135,125 @@ class TestCliExecution:
         with pytest.raises(SystemExit):
             main()
 
-    def test_missing_prompt(self, tmp_path: Path, monkeypatch) -> None:
-        """Verify error when no prompt provided."""
-        cfg = tmp_path / "config.json"
-        cfg.write_text(json.dumps({"env": {"ANTHROPIC_API_KEY": "sk"}}))
+    def test_missing_prompt_launches_interactive_native_agent(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        """No prompt should launch the detected native CLI interactively."""
+        cfg = tmp_path / "glm5-1-base.json"
+        cfg.write_text(json.dumps({
+            "env": {
+                "ANTHROPIC_AUTH_TOKEN": "token",
+                "ANTHROPIC_MODEL": "glm-5.1",
+            },
+            "skipDangerousModePermissionPrompt": True,
+        }))
 
-        monkeypatch.setattr(sys, "argv", ["clippet", "-c", str(cfg)])
-        # Simulate a TTY so stdin read won't provide a prompt
+        monkeypatch.setattr(sys, "argv", ["clippet", "-c", str(cfg), "claude"])
         monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
+        def fake_run(command, **kwargs):
+            home = Path(kwargs["env"]["HOME"])
+            settings_path = home / ".claude" / "settings.json"
+
+            assert command == ["claude"]
+            assert kwargs["cwd"] == Path.cwd()
+            assert settings_path.exists()
+            assert json.loads(settings_path.read_text(encoding="utf-8"))["env"][
+                "ANTHROPIC_MODEL"
+            ] == "glm-5.1"
+
+            return MagicMock(returncode=0)
+
+        with patch("clippet.cli.subprocess.run", side_effect=fake_run) as mock_run:
+            main()
+
+        mock_run.assert_called_once()
+
+    def test_env_launches_interactive_composite_agent(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        """Named environments should resolve to a composite config for interactive launch."""
+        native_cfg = tmp_path / "claude-native.json"
+        native_cfg.write_text(json.dumps({
+            "env": {
+                "ANTHROPIC_AUTH_TOKEN": "token",
+            },
+            "skipDangerousModePermissionPrompt": True,
+        }))
+
+        composite_cfg = tmp_path / "clippet-config.json"
+        composite_cfg.write_text(json.dumps({
+            "credential_profiles": {
+                "glm": {
+                    "files": {
+                        ".claude/settings.json": str(native_cfg),
+                    },
+                    "env": {
+                        "ANTHROPIC_MODEL": "glm-5.1",
+                    },
+                }
+            },
+            "adapters": [
+                {
+                    "adapter_type": "claude",
+                    "name": "claude",
+                    "options": {
+                        "model": "glm-5.1",
+                        "credential_profile": "glm",
+                    },
+                }
+            ],
+        }))
+
+        monkeypatch.setattr(sys, "argv", ["clippet", "-e", "glm", "claude"])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+        def fake_run(command, **kwargs):
+            home = Path(kwargs["env"]["HOME"])
+            settings_path = home / ".claude" / "settings.json"
+
+            assert command == [
+                "claude",
+                "--model",
+                "glm-5.1",
+                "--permission-mode",
+                "bypassPermissions",
+            ]
+            assert settings_path.exists()
+            assert kwargs["env"]["ANTHROPIC_MODEL"] == "glm-5.1"
+            return MagicMock(returncode=0)
+
         with (
-            patch("clippet.cli.detect_config_type", return_value="claude_code"),
-            pytest.raises(SystemExit),
+            patch(
+                "clippet.cli.get_environment",
+                return_value={"config_path": str(composite_cfg.resolve())},
+            ),
+            patch("clippet.cli.subprocess.run", side_effect=fake_run) as mock_run,
         ):
+            main()
+
+        mock_run.assert_called_once()
+
+    def test_native_config_type_mismatch_errors(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        """A native Claude config cannot be forced to run as Codex."""
+        cfg = tmp_path / "config.json"
+        cfg.write_text(json.dumps({
+            "env": {"ANTHROPIC_API_KEY": "sk-ant"},
+        }))
+
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["clippet", "-c", str(cfg), "codex", "-p", "do stuff"],
+        )
+
+        with pytest.raises(SystemExit):
             main()

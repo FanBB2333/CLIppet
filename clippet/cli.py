@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
+from clippet.adapters.base import BaseSubprocessAdapter
+from clippet.adapters.claude import ClaudeAdapter
+from clippet.adapters.codex import CodexAdapter
 from clippet.config.detector import (
     create_adapter_from_config_file,
     detect_config_type,
@@ -17,42 +21,101 @@ from clippet.config.environments import (
     remove_environment,
 )
 from clippet.config.registry import create_runner_from_config, load_config
-from clippet.models import AgentRequest
+from clippet.isolation import (
+    CredentialSet,
+    EnvVarCredentialProvider,
+    FileCredentialProvider,
+    IsolatedEnvironment,
+)
+from clippet.models import AgentRequest, IsolationConfig
 from clippet.parsers.extractors import parse_claude_json_output
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    """Build the top-level argument parser with subparsers."""
+class _ClippetArgumentParser:
+    """Small dispatcher that supports both subcommands and direct agent launch."""
 
-    parser = argparse.ArgumentParser(
-        prog="clippet",
-        description="CLIppet - A unified adapter framework for orchestrating CLI AI agents.",
-    )
+    def __init__(self) -> None:
+        description = (
+            "CLIppet - A unified adapter framework for orchestrating CLI AI agents."
+        )
 
-    subparsers = parser.add_subparsers(dest="command")
+        self._root_parser = argparse.ArgumentParser(
+            prog="clippet",
+            description=description,
+        )
 
-    # --- run (default) command ---
-    run_parser = subparsers.add_parser("run", help="Run an agent with a config")
-    _add_run_arguments(run_parser)
+        subparsers = self._root_parser.add_subparsers(dest="command")
 
-    # --- env subcommand ---
-    env_parser = subparsers.add_parser("env", help="Manage environment profiles")
-    env_sub = env_parser.add_subparsers(dest="env_action")
+        run_parser = subparsers.add_parser("run", help="Run an agent with a config")
+        _add_run_arguments(run_parser)
 
-    env_sub.add_parser("list", help="List registered environments")
+        env_parser = subparsers.add_parser("env", help="Manage environment profiles")
+        env_sub = env_parser.add_subparsers(dest="env_action")
 
-    env_add = env_sub.add_parser("add", help="Register an environment profile")
-    env_add.add_argument("name", help="Name for the environment")
-    env_add.add_argument("config_path", help="Path to the config file")
+        env_sub.add_parser("list", help="List registered environments")
 
-    env_rm = env_sub.add_parser("remove", help="Unregister an environment profile")
-    env_rm.add_argument("name", help="Name of the environment to remove")
+        env_add = env_sub.add_parser("add", help="Register an environment profile")
+        env_add.add_argument("name", help="Name for the environment")
+        env_add.add_argument("config_path", help="Path to the config file")
 
-    # Also add run arguments to the top-level parser so that
-    # ``clippet -c config.json claude -p "do stuff"`` works without ``run``.
-    _add_run_arguments(parser)
+        env_rm = env_sub.add_parser(
+            "remove",
+            help="Unregister an environment profile",
+        )
+        env_rm.add_argument("name", help="Name of the environment to remove")
 
-    return parser
+        self._run_parser = argparse.ArgumentParser(
+            prog="clippet",
+            description=description,
+        )
+        _add_run_arguments(self._run_parser)
+
+        self._env_parser = argparse.ArgumentParser(
+            prog="clippet env",
+            description="Manage environment profiles",
+        )
+        env_sub = self._env_parser.add_subparsers(dest="env_action")
+
+        env_sub.add_parser("list", help="List registered environments")
+
+        env_add = env_sub.add_parser("add", help="Register an environment profile")
+        env_add.add_argument("name", help="Name for the environment")
+        env_add.add_argument("config_path", help="Path to the config file")
+
+        env_rm = env_sub.add_parser(
+            "remove",
+            help="Unregister an environment profile",
+        )
+        env_rm.add_argument("name", help="Name of the environment to remove")
+
+    def parse_args(self, args: list[str] | None = None) -> argparse.Namespace:
+        """Parse CLI arguments with support for top-level agent invocations."""
+
+        argv = list(sys.argv[1:] if args is None else args)
+
+        if argv and argv[0] == "env":
+            namespace = self._env_parser.parse_args(argv[1:])
+            namespace.command = "env"
+            return namespace
+
+        if argv and argv[0] == "run":
+            namespace = self._run_parser.parse_args(argv[1:])
+            namespace.command = "run"
+            return namespace
+
+        namespace = self._run_parser.parse_args(argv)
+        namespace.command = None
+        return namespace
+
+    def print_help(self) -> None:
+        """Print the top-level help message."""
+
+        self._root_parser.print_help()
+
+
+def _build_parser() -> _ClippetArgumentParser:
+    """Build the top-level parser dispatcher."""
+    return _ClippetArgumentParser()
 
 
 def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
@@ -82,55 +145,253 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
 # --- handlers ---------------------------------------------------------------
 
 
-def _handle_run(args: argparse.Namespace) -> None:
-    """Execute an agent based on the resolved arguments."""
+def _resolve_config_path(args: argparse.Namespace) -> str:
+    """Resolve the requested config path from ``-c`` or ``-e``."""
 
-    # 1. Resolve config path
     config_path: str | None = getattr(args, "config", None)
     env_name: str | None = getattr(args, "env", None)
 
     if config_path:
-        config_path = str(Path(config_path).resolve())
-    elif env_name:
+        return str(Path(config_path).resolve())
+
+    if env_name:
         try:
             env_profile = get_environment(env_name)
         except KeyError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
-        config_path = env_profile["config_path"]
-    else:
+        return env_profile["config_path"]
+
+    print(
+        "Error: Either -c/--config or -e/--env must be provided.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+def _resolve_prompt(args: argparse.Namespace) -> str | None:
+    """Resolve a prompt from ``-p`` or stdin, if present."""
+
+    prompt: str | None = getattr(args, "prompt", None)
+    if prompt:
+        return prompt
+
+    if not sys.stdin.isatty():
+        stdin_prompt = sys.stdin.read().strip()
+        if stdin_prompt:
+            return stdin_prompt
+
+    return None
+
+
+def _normalize_native_agent_type(
+    config_path: str,
+    detected_type: str,
+    agent_type: str | None,
+) -> str:
+    """Validate and normalize the requested native agent type."""
+
+    if detected_type not in {"claude_code", "codex"}:
+        raise ValueError(f"Unsupported native config type: {detected_type}")
+
+    if agent_type == "qoder":
+        raise ValueError(
+            "'qoder' is only supported with CLIppet composite configs. "
+            "Please use a CLIppet config file instead."
+        )
+
+    requested_type = agent_type
+    if requested_type == "claude":
+        requested_type = "claude_code"
+
+    if requested_type is None:
+        return detected_type
+
+    if requested_type != detected_type:
+        detected_name = "claude" if detected_type == "claude_code" else detected_type
+        raise ValueError(
+            f"Config '{config_path}' was detected as '{detected_name}', "
+            f"but '{agent_type}' was requested."
+        )
+
+    return requested_type
+
+
+def _build_interactive_command(adapter: BaseSubprocessAdapter) -> list[str]:
+    """Build the interactive command for a configured adapter."""
+
+    if isinstance(adapter, ClaudeAdapter):
+        command = ["claude"]
+
+        if adapter.model:
+            command.extend(["--model", adapter.model])
+        if adapter.permission_mode:
+            command.extend(["--permission-mode", adapter.permission_mode])
+        if adapter.allowed_tools:
+            command.extend(["--allowed-tools", ",".join(adapter.allowed_tools)])
+        if adapter.disallowed_tools:
+            command.extend(["--disallowed-tools", ",".join(adapter.disallowed_tools)])
+        if adapter.append_system_prompt:
+            command.extend(["--append-system-prompt", adapter.append_system_prompt])
+        if adapter.verbose:
+            command.append("--verbose")
+
+        return command
+
+    if isinstance(adapter, CodexAdapter):
+        command = ["codex"]
+
+        if adapter.model:
+            command.extend(["--model", adapter.model])
+        if adapter.sandbox:
+            command.extend(["--sandbox", adapter.sandbox])
+        if adapter.approval_mode:
+            command.extend(["--ask-for-approval", adapter.approval_mode])
+        if adapter.config_overrides:
+            for key, value in adapter.config_overrides.items():
+                command.extend(["-c", f"{key}={value}"])
+
+        return command
+
+    raise ValueError(
+        "Interactive launch is only supported for Claude and Codex adapters."
+    )
+
+
+def _build_credential_set(isolation: IsolationConfig) -> CredentialSet:
+    """Build credential providers for an isolation config."""
+
+    providers = []
+
+    if isolation.credential_files:
+        providers.append(FileCredentialProvider(isolation.credential_files))
+
+    if isolation.env_overrides:
+        providers.append(EnvVarCredentialProvider(isolation.env_overrides))
+
+    return CredentialSet(providers)
+
+
+def _run_interactive_command(
+    command: list[str],
+    isolation: IsolationConfig | None,
+    cwd: Path,
+) -> None:
+    """Launch an interactive agent command with optional isolation."""
+
+    try:
+        if isolation is None:
+            completed = subprocess.run(command, cwd=cwd, check=False)
+        else:
+            with IsolatedEnvironment(
+                persist=isolation.persist_sandbox,
+                env_whitelist=isolation.env_whitelist,
+                env_blacklist=isolation.env_blacklist,
+            ) as isolated_env:
+                _build_credential_set(isolation).inject(isolated_env)
+                completed = subprocess.run(
+                    command,
+                    cwd=cwd,
+                    env=isolated_env.env,
+                    check=False,
+                )
+    except FileNotFoundError:
         print(
-            "Error: Either -c/--config or -e/--env must be provided.",
+            f"Error: CLI binary not found: {command[0] if command else 'unknown'}",
             file=sys.stderr,
         )
         sys.exit(1)
+    except PermissionError:
+        print(
+            f"Error: Permission denied executing: {command[0] if command else 'unknown'}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except Exception as exc:
+        print(f"Error launching agent: {exc}", file=sys.stderr)
+        sys.exit(1)
 
-    # 2. Resolve prompt
-    prompt: str | None = getattr(args, "prompt", None)
-    if not prompt:
-        if not sys.stdin.isatty():
-            prompt = sys.stdin.read().strip()
-        if not prompt:
+    if completed.returncode != 0:
+        sys.exit(completed.returncode)
+
+
+def _run_interactive(config_path: str, config_format: str, agent_type: str | None) -> None:
+    """Launch an agent interactively with the requested config."""
+
+    cwd = Path.cwd()
+
+    if config_format == "clippet":
+        if not agent_type:
             print(
-                "Error: A prompt is required. Use -p/--prompt or pipe via stdin.",
+                "Error: agent_type is required for CLIppet composite configs. "
+                "Specify one of: claude, codex, qoder.",
                 file=sys.stderr,
             )
             sys.exit(1)
 
+        try:
+            config = load_config(config_path)
+            runner = create_runner_from_config(config)
+            adapter = runner.get_adapter(agent_type)
+        except Exception as exc:
+            print(f"Error loading config: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        try:
+            command = _build_interactive_command(adapter)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        _run_interactive_command(command, adapter.default_isolation, cwd)
+        return
+
+    try:
+        effective_type = _normalize_native_agent_type(
+            config_path,
+            config_format,
+            agent_type,
+        )
+        adapter = create_adapter_from_config_file(config_path, effective_type)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    command = ["claude"] if effective_type == "claude_code" else ["codex"]
+    _run_interactive_command(command, adapter.default_isolation, cwd)
+
+
+def _handle_run(args: argparse.Namespace) -> None:
+    """Execute an agent based on the resolved arguments."""
+
+    config_path = _resolve_config_path(args)
     agent_type: str | None = getattr(args, "agent_type", None)
 
-    # 3. Detect config format
+    # 1. Detect config format
     try:
         config_format = detect_config_type(config_path)
     except (ValueError, FileNotFoundError, Exception) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    # 4. Dispatch based on format
+    # 2. Resolve prompt; without one we launch the underlying CLI interactively.
+    prompt = _resolve_prompt(args)
+    if prompt is None:
+        if not sys.stdin.isatty():
+            print(
+                "Error: A prompt is required when stdin is piped. "
+                "Use -p/--prompt or provide non-empty stdin.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        _run_interactive(config_path, config_format, agent_type)
+        return
+
+    # 3. Dispatch based on format
     if config_format == "clippet":
         _run_clippet_composite(config_path, agent_type, prompt)
     else:
-        _run_native_config(config_path, agent_type, prompt)
+        _run_native_config(config_path, config_format, agent_type, prompt)
 
 
 def _run_clippet_composite(
@@ -165,24 +426,20 @@ def _run_clippet_composite(
 
 
 def _run_native_config(
-    config_path: str, agent_type: str | None, prompt: str
+    config_path: str,
+    config_format: str,
+    agent_type: str | None,
+    prompt: str,
 ) -> None:
     """Handle a native Claude Code or Codex config file."""
 
-    # Map CLI agent_type names to the values expected by the detector/factory.
-    if agent_type == "claude":
-        agent_type = "claude_code"
-    elif agent_type == "qoder":
-        print(
-            "Error: 'qoder' agent type is only supported with CLIppet composite "
-            "configs. Please use a CLIppet config file instead.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    # "codex" and None pass through unchanged.
-
     try:
-        adapter = create_adapter_from_config_file(config_path, agent_type)
+        effective_type = _normalize_native_agent_type(
+            config_path,
+            config_format,
+            agent_type,
+        )
+        adapter = create_adapter_from_config_file(config_path, effective_type)
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)

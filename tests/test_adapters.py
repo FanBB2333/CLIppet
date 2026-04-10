@@ -48,6 +48,7 @@ class TestClaudeAdapter:
         assert "--permission-mode" in cmd
         perm_idx = cmd.index("--permission-mode")
         assert cmd[perm_idx + 1] == "bypassPermissions"
+        assert "-d" not in cmd
 
     def test_build_command_with_options(self):
         """Verify optional parameters appear in command."""

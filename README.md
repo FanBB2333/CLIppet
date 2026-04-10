@@ -63,6 +63,75 @@ print(f"Time: {result.execution_time}s")
 print(f"Tools used: {[t.tool_name for t in result.tool_calls]}")
 ```
 
+## CLI Usage
+
+CLIppet can also be used as a command-line launcher for Claude Code and Codex.
+
+### Launch Claude interactively with a native Claude config
+
+```bash
+clippet -c /home/l1ght/repos/CLIppet/glm4-7-base.json claude
+```
+
+If `clippet` is not installed as a shell command yet, run it as a module:
+
+```bash
+python3 -m clippet.cli -c /home/l1ght/repos/CLIppet/glm4-7-base.json claude
+```
+
+This starts the real `claude` interactive session and injects the selected JSON
+file as an isolated `~/.claude/settings.json`.
+
+### Run Claude non-interactively with a native Claude config
+
+```bash
+clippet -c /home/l1ght/repos/CLIppet/glm4-7-base.json claude -p "你是什么模型，只回答模型名"
+```
+
+### Launch Codex interactively with a native Codex config
+
+```bash
+clippet -c /path/to/auth.json codex
+```
+
+### Register and reuse named environments
+
+Use `-e` when you want to refer to a saved config path by name:
+
+```bash
+clippet env add glm47 /home/l1ght/repos/CLIppet/glm4-7-base.json
+clippet -e glm47 claude
+```
+
+You can inspect registered environments with:
+
+```bash
+clippet env list
+```
+
+### Use a CLIppet composite config
+
+When the config file is a CLIppet JSON/YAML config containing multiple adapters,
+specify which agent to launch:
+
+```bash
+clippet -c clippet-config.json claude
+clippet -c clippet-config.json codex
+```
+
+For non-interactive execution with a composite config:
+
+```bash
+clippet -c clippet-config.json claude -p "review the current repository"
+```
+
+### Behavior summary
+
+- `-c` accepts a native Claude config, a native Codex config, or a CLIppet composite config.
+- `-e` resolves a previously registered environment name to a config path.
+- With `-p`, CLIppet runs the agent non-interactively and prints the result.
+- Without `-p`, CLIppet launches the underlying CLI in interactive mode.
+
 ## Parallel Execution
 
 Run multiple agents on the same task simultaneously:

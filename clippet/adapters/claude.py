@@ -74,9 +74,6 @@ class ClaudeAdapter(BaseSubprocessAdapter):
         # Add permission mode
         cmd.extend(["--permission-mode", self.permission_mode])
         
-        # Add working directory
-        cmd.extend(["-d", str(request.workspace_dir)])
-        
         # Add max turns if set
         if self.max_turns is not None:
             cmd.extend(["--max-turns", str(self.max_turns)])
