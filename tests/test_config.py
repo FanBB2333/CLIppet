@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.config.registry import (
+    AdapterConfig,
     ClippetConfig,
     CredentialProfileConfig,
-    AdapterConfig,
     create_runner_from_config,
     load_config,
 )
@@ -16,15 +18,14 @@ from clippet.models import IsolationConfig
 
 
 class TestConfigLoading:
-    """Tests for YAML configuration parsing."""
+    """Tests for YAML/JSON configuration parsing."""
 
-    def test_load_config_parses_credential_profiles(self, tmp_path: Path, monkeypatch):
-        """Credential profiles should load and expand environment references."""
-        monkeypatch.setenv("TEST_API_KEY", "expanded-secret")
-
-        config_path = tmp_path / "clippet-config.yaml"
-        config_path.write_text(
-            """
+    @pytest.mark.parametrize(
+        ("filename", "contents"),
+        [
+            (
+                "clippet-config.yaml",
+                """
 credential_profiles:
   personal:
     files:
@@ -36,9 +37,49 @@ adapters:
     name: claude-personal
     options:
       credential_profile: personal
-            """.strip(),
-            encoding="utf-8",
-        )
+                """.strip(),
+            ),
+            (
+                "clippet-config.json",
+                """
+{
+  "credential_profiles": {
+    "personal": {
+      "files": {
+        ".claude/settings.json": "~/profiles/settings.json"
+      },
+      "env": {
+        "ANTHROPIC_API_KEY": "${TEST_API_KEY}"
+      }
+    }
+  },
+  "adapters": [
+    {
+      "adapter_type": "claude",
+      "name": "claude-personal",
+      "options": {
+        "credential_profile": "personal"
+      }
+    }
+  ]
+}
+                """.strip(),
+            ),
+        ],
+    )
+    def test_load_config_parses_credential_profiles(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+        filename: str,
+        contents: str,
+    ) -> None:
+        """Credential profiles should load and expand environment references."""
+
+        monkeypatch.setenv("TEST_API_KEY", "expanded-secret")
+
+        config_path = tmp_path / filename
+        config_path.write_text(contents, encoding="utf-8")
 
         config = load_config(config_path)
 
@@ -53,7 +94,7 @@ adapters:
 class TestRunnerCreation:
     """Tests for runner creation from config objects."""
 
-    def test_create_runner_applies_credential_profile_as_default_isolation(self):
+    def test_create_runner_applies_credential_profile_as_default_isolation(self) -> None:
         """Adapters created from config should carry the referenced profile."""
         config = ClippetConfig(
             credential_profiles={
@@ -81,7 +122,7 @@ class TestRunnerCreation:
             env_overrides={"OPENAI_API_KEY": "sk-work"},
         )
 
-    def test_create_runner_rejects_unknown_credential_profile(self):
+    def test_create_runner_rejects_unknown_credential_profile(self) -> None:
         """An adapter cannot reference a credential profile that does not exist."""
         config = ClippetConfig(
             adapters=[

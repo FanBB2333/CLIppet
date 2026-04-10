@@ -21,7 +21,7 @@ CLIppet solves all of this with a single `adapter.run(request)` call.
 - **Structured Output** — tool call records, execution time, step counts — no regex hacks
 - **Sandbox Isolation** — per-run credential injection, environment variable filtering, temporary workspaces
 - **Parallel Orchestration** — `ClippetRunner` dispatches multiple agents concurrently via thread pool or asyncio
-- **Declarative Config** — YAML-based adapter registration with credential profiles
+- **Declarative Config** — YAML/JSON-based adapter registration with credential profiles
 - **Built-in Adapters** — Claude Code, Codex, and Qoder out of the box; extensible via `BaseSubprocessAdapter`
 
 ## Installation
@@ -118,38 +118,47 @@ results = runner.execute_parallel({
 })
 ```
 
-## YAML Configuration
+## Configuration (YAML or JSON)
 
 Define adapters and credential profiles declaratively:
 
-```yaml
-# clippet-config.yaml
-credential_profiles:
-  personal:
-    files:
-      ".claude/settings.json": "~/profiles/personal/settings.json"
-    env:
-      ANTHROPIC_API_KEY: "${PERSONAL_API_KEY}"
-
-adapters:
-  - adapter_type: claude
-    name: claude-personal
-    options:
-      model: opus
-
-  - adapter_type: codex
-    name: codex-default
-    options:
-      model: o4-mini
-
-default_timeout: 900
-max_workers: 4
+```json
+{
+    "credential_profiles": {
+        "personal": {
+            "files": {
+                ".claude/settings.json": "~/profiles/personal/settings.json"
+            },
+            "env": {
+                "ANTHROPIC_API_KEY": "${PERSONAL_API_KEY}"
+            }
+        }
+    },
+    "adapters": [
+        {
+            "adapter_type": "claude",
+            "name": "claude-personal",
+            "options": {
+                "model": "opus"
+            }
+        },
+        {
+            "adapter_type": "codex",
+            "name": "codex-default",
+            "options": {
+                "model": "o4-mini"
+            }
+        }
+    ],
+    "default_timeout": 900,
+    "max_workers": 4
+}
 ```
 
 ```python
 from clippet.config import load_config, create_runner_from_config
 
-config = load_config("clippet-config.yaml")
+config = load_config("clippet-config.json")
 runner = create_runner_from_config(config)
 
 result = runner.execute("claude-personal", request)
@@ -172,7 +181,7 @@ clippet/
 ├── parsers/
 │   └── extractors.py    # JSON/text output parsers
 └── config/
-    └── registry.py      # YAML config & adapter registration
+    └── registry.py      # YAML/JSON config & adapter registration
 ```
 
 ### Core Data Models

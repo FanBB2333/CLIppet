@@ -1,0 +1,42 @@
+{
+  "credential_profiles": {
+    "claude-default": {
+      "files": {
+        ".claude/settings.json": "/absolute/path/to/settings.json",
+        ".claude/credentials.json": "/absolute/path/to/credentials.json"
+      },
+      "env": {
+        "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
+      }
+    },
+    "codex-default": {
+      "files": {
+        ".codex/auth.json": "/absolute/path/to/codex/auth.json"
+      },
+      "env": {
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}"
+      }
+    }
+  },
+  "adapters": [
+    {
+      "adapter_type": "claude",
+      "name": "claude",
+      "options": {
+        "model": "sonnet",
+        "permission_mode": "bypassPermissions",
+        "credential_profile": "claude-default"
+      }
+    },
+    {
+      "adapter_type": "codex",
+      "name": "codex",
+      "options": {
+        "model": "o4-mini",
+        "credential_profile": "codex-default"
+      }
+    }
+  ],
+  "default_timeout": 900,
+  "max_workers": 4
+}

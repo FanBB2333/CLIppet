@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any, Literal
@@ -67,11 +68,11 @@ class ClippetConfig(BaseModel):
     credential_profiles: dict[str, CredentialProfileConfig] = Field(default_factory=dict)
 
 
-def load_config(path: Path) -> ClippetConfig:
-    """Load and parse a YAML config file into ClippetConfig.
+def load_config(path: Path | str) -> ClippetConfig:
+    """Load and parse a YAML or JSON config file into ClippetConfig.
 
     Args:
-        path: Path to the YAML configuration file.
+        path: Path to the YAML (.yml/.yaml) or JSON (.json) configuration file.
 
     Returns:
         Parsed ClippetConfig object.
@@ -79,11 +80,18 @@ def load_config(path: Path) -> ClippetConfig:
     Raises:
         FileNotFoundError: If the config file doesn't exist.
         yaml.YAMLError: If the YAML is invalid.
+        json.JSONDecodeError: If the JSON is invalid.
         pydantic.ValidationError: If the config doesn't match the schema.
     """
 
+    path = Path(path)
+    suffix = path.suffix.lower()
+
     with open(path, "r", encoding="utf-8") as f:
-        raw_config = yaml.safe_load(f) or {}
+        if suffix == ".json":
+            raw_config = json.load(f) or {}
+        else:
+            raw_config = yaml.safe_load(f) or {}
 
     return ClippetConfig(**raw_config)
 
