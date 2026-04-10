@@ -1,6 +1,19 @@
 """CLIppet - A unified adapter framework for orchestrating CLI AI agents."""
 
 from clippet.adapters import ClaudeAdapter, CodexAdapter, QoderAdapter
+from clippet.config.detector import (
+    create_adapter_from_claude_config,
+    create_adapter_from_codex_config,
+    create_adapter_from_config_file,
+    detect_config_type,
+)
+from clippet.config.environments import (
+    add_environment,
+    get_environment,
+    list_environments,
+    load_environments,
+    remove_environment,
+)
 from clippet.config.registry import (
     AdapterConfig,
     ClippetConfig,
@@ -46,6 +59,17 @@ __all__ = [
     "CredentialProfileConfig",
     "load_config",
     "create_runner_from_config",
+    # Config detection
+    "detect_config_type",
+    "create_adapter_from_config_file",
+    "create_adapter_from_claude_config",
+    "create_adapter_from_codex_config",
+    # Environments
+    "load_environments",
+    "get_environment",
+    "add_environment",
+    "remove_environment",
+    "list_environments",
     # Version
     "__version__",
 ]

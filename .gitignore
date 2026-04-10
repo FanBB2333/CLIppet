@@ -39,3 +39,7 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
+
+# Sensitive config files (contain API keys)
+glm*.json
+TODOs.md
