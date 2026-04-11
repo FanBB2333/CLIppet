@@ -41,18 +41,38 @@ class AgentResult(BaseModel):
 
 
 class IsolationConfig(BaseModel):
-    """Isolation configuration for a single agent execution."""
+    """Isolation configuration for a single agent execution.
 
+    Two isolation modes are supported:
+
+    1. **Single-file mode** (default): A temporary HOME directory is created and
+       ``credential_files`` are copied into it.  Any ``env_overrides`` are applied
+       on top.
+    2. **Second-home mode**: Set ``home_dir`` to a persistent directory path that
+       already contains the full config hierarchy (``.claude/``, ``.codex/``, etc.).
+       The directory is used *directly* as ``$HOME`` without copying or creating a
+       temporary directory and is **never** deleted by CLIppet.
+    """
+
+    home_dir: str | None = None
     credential_files: dict[str, str] = Field(default_factory=dict)
     env_overrides: dict[str, str] = Field(default_factory=dict)
     env_whitelist: list[str] | None = None
     env_blacklist: list[str] | None = None
     persist_sandbox: bool = False
 
+    @property
+    def is_second_home(self) -> bool:
+        """Return True when a persistent second-home directory is configured."""
+        return self.home_dir is not None
+
     def merged_with(self, override: "IsolationConfig") -> "IsolationConfig":
         """Merge another config on top of the current one."""
 
         merged_data = self.model_dump()
+
+        if "home_dir" in override.model_fields_set:
+            merged_data["home_dir"] = override.home_dir
 
         if "credential_files" in override.model_fields_set:
             credential_files = dict(self.credential_files)

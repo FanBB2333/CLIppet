@@ -1,10 +1,12 @@
 """CLIppet - A unified adapter framework for orchestrating CLI AI agents."""
 
+from clippet.adapters import BaseAdapter, BaseSubprocessAdapter
 from clippet.adapters import ClaudeAdapter, CodexAdapter, QoderAdapter
 from clippet.config.detector import (
     create_adapter_from_claude_config,
     create_adapter_from_codex_config,
     create_adapter_from_config_file,
+    create_adapter_with_second_home,
     detect_config_type,
 )
 from clippet.config.environments import (
@@ -22,8 +24,10 @@ from clippet.config.registry import (
     load_config,
 )
 from clippet.isolation import (
+    AGENT_CONFIG_PATHS,
     CredentialProvider,
     CredentialSet,
+    DirectoryCopyProvider,
     EnvVarCredentialProvider,
     FileCredentialProvider,
     IsolatedEnvironment,
@@ -32,7 +36,15 @@ from clippet.models import AgentRequest, AgentResult, IsolationConfig, ToolCallR
 from clippet.orchestrator import ClippetRunner
 from clippet.protocols import ClippetAdapter
 
-__version__ = "0.1.0"
+# OpenAIAdapter is conditionally available
+try:
+    from clippet.adapters.api import OpenAIAdapter
+
+    _HAS_OPENAI = True
+except ImportError:
+    _HAS_OPENAI = False
+
+__version__ = "0.2.0"
 
 __all__ = [
     # Models
@@ -44,9 +56,14 @@ __all__ = [
     "CredentialProvider",
     "FileCredentialProvider",
     "EnvVarCredentialProvider",
+    "DirectoryCopyProvider",
     "CredentialSet",
+    "AGENT_CONFIG_PATHS",
     # Protocol
     "ClippetAdapter",
+    # Base classes
+    "BaseAdapter",
+    "BaseSubprocessAdapter",
     # Adapters
     "ClaudeAdapter",
     "CodexAdapter",
@@ -64,6 +81,7 @@ __all__ = [
     "create_adapter_from_config_file",
     "create_adapter_from_claude_config",
     "create_adapter_from_codex_config",
+    "create_adapter_with_second_home",
     # Environments
     "load_environments",
     "get_environment",
@@ -73,3 +91,6 @@ __all__ = [
     # Version
     "__version__",
 ]
+
+if _HAS_OPENAI:
+    __all__.append("OpenAIAdapter")

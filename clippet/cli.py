@@ -123,7 +123,10 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
 
     parser.add_argument(
         "-c", "--config",
-        help="Path to a config file (Claude Code, Codex, or CLIppet format)",
+        help=(
+            "Path to a config file (Claude Code, Codex, or CLIppet format) "
+            "or a directory to use as second-home"
+        ),
     )
     parser.add_argument(
         "-e", "--env",
@@ -283,7 +286,9 @@ def _run_interactive_command(
         if isolation is None:
             completed = subprocess.run(command, cwd=cwd, check=False)
         else:
+            home_dir = Path(isolation.home_dir) if isolation.home_dir else None
             with IsolatedEnvironment(
+                home_dir=home_dir,
                 persist=isolation.persist_sandbox,
                 env_whitelist=isolation.env_whitelist,
                 env_blacklist=isolation.env_blacklist,
@@ -320,6 +325,27 @@ def _run_interactive(config_path: str, config_format: str, agent_type: str | Non
 
     cwd = Path.cwd()
 
+    # --- Second-home mode (directory) --------------------------------------
+    if config_format == "second_home":
+        if not agent_type:
+            print(
+                "Error: agent_type is required when -c points to a directory "
+                "(second-home mode). Specify one of: claude, codex.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+        try:
+            adapter = create_adapter_from_config_file(config_path, agent_type)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        command = _build_interactive_command(adapter)
+        _run_interactive_command(command, adapter.default_isolation, cwd)
+        return
+
+    # --- CLIppet composite -------------------------------------------------
     if config_format == "clippet":
         if not agent_type:
             print(
@@ -346,6 +372,7 @@ def _run_interactive(config_path: str, config_format: str, agent_type: str | Non
         _run_interactive_command(command, adapter.default_isolation, cwd)
         return
 
+    # --- Native config file ------------------------------------------------
     try:
         effective_type = _normalize_native_agent_type(
             config_path,
@@ -390,8 +417,40 @@ def _handle_run(args: argparse.Namespace) -> None:
     # 3. Dispatch based on format
     if config_format == "clippet":
         _run_clippet_composite(config_path, agent_type, prompt)
+    elif config_format == "second_home":
+        _run_second_home(config_path, agent_type, prompt)
     else:
         _run_native_config(config_path, config_format, agent_type, prompt)
+
+
+def _run_second_home(
+    config_path: str, agent_type: str | None, prompt: str
+) -> None:
+    """Handle a second-home directory config."""
+
+    if not agent_type:
+        print(
+            "Error: agent_type is required when -c points to a directory "
+            "(second-home mode). Specify one of: claude, codex.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        adapter = create_adapter_from_config_file(config_path, agent_type)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    request = AgentRequest(task_prompt=prompt)
+
+    try:
+        result = adapter.run(request)
+    except Exception as exc:
+        print(f"Error executing agent: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    _print_result(result)
 
 
 def _run_clippet_composite(

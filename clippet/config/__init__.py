@@ -4,6 +4,7 @@ from clippet.config.detector import (
     create_adapter_from_claude_config,
     create_adapter_from_codex_config,
     create_adapter_from_config_file,
+    create_adapter_with_second_home,
     detect_config_type,
 )
 from clippet.config.registry import (
@@ -21,6 +22,7 @@ __all__ = [
     "create_adapter_from_claude_config",
     "create_adapter_from_codex_config",
     "create_adapter_from_config_file",
+    "create_adapter_with_second_home",
     "create_runner_from_config",
     "detect_config_type",
     "load_config",

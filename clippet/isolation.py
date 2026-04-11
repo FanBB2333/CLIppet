@@ -9,12 +9,44 @@ import tempfile
 from typing import Protocol
 
 
+# ---------------------------------------------------------------------------
+# Well-known config paths per agent (relative to HOME)
+# ---------------------------------------------------------------------------
+
+AGENT_CONFIG_PATHS: dict[str, list[str]] = {
+    "claude": [
+        ".claude",          # ~/.claude/ directory (settings.json, skills/, etc.)
+        ".claude.json",     # MCP config at HOME root
+    ],
+    "codex": [
+        ".codex",           # ~/.codex/ directory (auth.json, config.toml, etc.)
+    ],
+    "gemini": [
+        ".gemini",          # ~/.gemini/ directory (.env, settings.json, etc.)
+    ],
+    "opencode": [
+        ".config/opencode", # ~/.config/opencode/ (opencode.json, .env, etc.)
+    ],
+}
+
+
 class IsolatedEnvironment:
-    """Create a sandboxed HOME directory and environment for one agent run."""
+    """Create a sandboxed HOME directory and environment for one agent run.
+
+    Supports two modes:
+
+    * **Temp-dir mode** (default): creates a fresh ``clippet-agent-*`` directory
+      under ``base_dir`` (or the system temp root).  The directory is removed on
+      ``cleanup()`` unless ``persist`` is *True*.
+    * **Second-home mode**: when ``home_dir`` is given, the supplied path is used
+      *directly* as ``$HOME``.  No temp directory is created and the path is
+      **never** removed by CLIppet.
+    """
 
     def __init__(
         self,
         base_dir: Path | None = None,
+        home_dir: Path | None = None,
         persist: bool = False,
         inherit_env: bool = True,
         env_overrides: dict[str, str] | None = None,
@@ -22,6 +54,7 @@ class IsolatedEnvironment:
         env_blacklist: list[str] | None = None,
     ) -> None:
         self._base_dir = Path(base_dir).expanduser() if base_dir else None
+        self._home_dir_override = Path(home_dir).expanduser() if home_dir else None
         self._persist = persist
         self._inherit_env = inherit_env
         self._env_overrides = dict(env_overrides or {})
@@ -29,6 +62,7 @@ class IsolatedEnvironment:
         self._env_blacklist = list(env_blacklist) if env_blacklist is not None else None
         self._home_dir: Path | None = None
         self._env: dict[str, str] | None = None
+        self._is_second_home: bool = False
 
     @property
     def home_dir(self) -> Path:
@@ -46,6 +80,11 @@ class IsolatedEnvironment:
             raise RuntimeError("IsolatedEnvironment has not been entered")
         return self._env
 
+    @property
+    def is_second_home(self) -> bool:
+        """Return True when running in second-home (persistent directory) mode."""
+        return self._is_second_home
+
     def __enter__(self) -> IsolatedEnvironment:
         """Create the sandbox directory and environment."""
 
@@ -59,7 +98,10 @@ class IsolatedEnvironment:
         self.cleanup()
 
     def cleanup(self) -> None:
-        """Delete the sandbox directory when persistence is disabled."""
+        """Delete the sandbox directory when persistence is disabled.
+
+        Second-home directories are **never** deleted.
+        """
 
         if self._home_dir is None:
             return
@@ -67,6 +109,10 @@ class IsolatedEnvironment:
         cleanup_target = self._home_dir
         self._home_dir = None
         self._env = None
+
+        # Never delete a second-home directory
+        if self._is_second_home:
+            return
 
         if not self._persist:
             shutil.rmtree(cleanup_target, ignore_errors=True)
@@ -95,6 +141,13 @@ class IsolatedEnvironment:
             self._env["HOME"] = str(self.home_dir)
 
     def _create_home_dir(self) -> Path:
+        # Second-home mode: use the pre-existing directory directly
+        if self._home_dir_override is not None:
+            self._home_dir_override.mkdir(parents=True, exist_ok=True)
+            self._is_second_home = True
+            return self._home_dir_override
+
+        # Temp-dir mode
         parent_dir: str | None = None
 
         if self._base_dir is not None:
@@ -148,6 +201,35 @@ class FileCredentialProvider:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
             destination.chmod(0o600)
+
+
+class DirectoryCopyProvider:
+    """Copy an entire directory tree into the sandbox HOME.
+
+    Useful for copying a real agent config directory (e.g. ``~/.codex/``) into
+    a temp sandbox so that *all* config files are available, not just the auth
+    file.
+    """
+
+    def __init__(self, mappings: dict[str, Path | str]) -> None:
+        """Initialise with ``{relative_dest: source_dir}`` mappings."""
+        self._mappings = {
+            relative_dest: Path(source_dir).expanduser()
+            for relative_dest, source_dir in mappings.items()
+        }
+
+    def inject(self, env: IsolatedEnvironment) -> None:
+        """Copy directory trees into the sandbox."""
+
+        for relative_dest, source_dir in self._mappings.items():
+            source = source_dir.resolve()
+            if not source.is_dir():
+                continue  # silently skip missing directories
+
+            destination = env.resolve_path(relative_dest)
+            if destination.exists():
+                shutil.rmtree(destination)
+            shutil.copytree(source, destination)
 
 
 class EnvVarCredentialProvider:

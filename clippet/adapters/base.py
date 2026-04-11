@@ -1,4 +1,9 @@
-"""Base subprocess adapter for CLI AI agents."""
+"""Base adapter classes for CLIppet.
+
+Provides ``BaseAdapter`` — the unified abstract base for **all** adapters
+(subprocess-based and API-based) — and ``BaseSubprocessAdapter`` which adds
+shared subprocess execution logic on top.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +16,7 @@ from typing import Any
 
 from clippet.isolation import (
     CredentialSet,
+    DirectoryCopyProvider,
     EnvVarCredentialProvider,
     FileCredentialProvider,
     IsolatedEnvironment,
@@ -18,7 +24,42 @@ from clippet.isolation import (
 from clippet.models import AgentRequest, AgentResult, IsolationConfig
 
 
-class BaseSubprocessAdapter(ABC):
+# ---------------------------------------------------------------------------
+# BaseAdapter — unified abstract base for ALL adapters
+# ---------------------------------------------------------------------------
+
+
+class BaseAdapter(ABC):
+    """Unified abstract base class for all CLIppet adapters.
+
+    Every adapter — whether it spawns a local CLI subprocess or calls a
+    remote API — must inherit from this class and implement ``agent_name``,
+    ``run``, and ``run_async``.
+    """
+
+    @property
+    @abstractmethod
+    def agent_name(self) -> str:
+        """Return the name of the agent this adapter interfaces with."""
+        ...
+
+    @abstractmethod
+    def run(self, request: AgentRequest) -> AgentResult:
+        """Execute the agent synchronously with the given request."""
+        ...
+
+    @abstractmethod
+    async def run_async(self, request: AgentRequest) -> AgentResult:
+        """Execute the agent asynchronously with the given request."""
+        ...
+
+
+# ---------------------------------------------------------------------------
+# BaseSubprocessAdapter — shared subprocess execution logic
+# ---------------------------------------------------------------------------
+
+
+class BaseSubprocessAdapter(BaseAdapter):
     """Abstract base class providing shared subprocess execution logic for all CLI adapters.
 
     Subclasses must implement:
@@ -45,12 +86,6 @@ class BaseSubprocessAdapter(ABC):
 
         for key, value in kwargs.items():
             setattr(self, key, value)
-
-    @property
-    @abstractmethod
-    def agent_name(self) -> str:
-        """Return the name of the agent this adapter interfaces with."""
-        ...
 
     @abstractmethod
     def build_command(self, request: AgentRequest) -> list[str]:
@@ -228,7 +263,10 @@ class BaseSubprocessAdapter(ABC):
     ) -> IsolatedEnvironment:
         """Create an isolated runtime environment from request config."""
 
+        home_dir = Path(isolation.home_dir) if isolation.home_dir else None
+
         return IsolatedEnvironment(
+            home_dir=home_dir,
             persist=isolation.persist_sandbox,
             env_whitelist=isolation.env_whitelist,
             env_blacklist=isolation.env_blacklist,
