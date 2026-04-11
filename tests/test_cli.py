@@ -157,7 +157,10 @@ class TestCliExecution:
             home = Path(kwargs["env"]["HOME"])
             settings_path = home / ".claude" / "settings.json"
 
-            assert command == ["claude"]
+            assert command[0] == "claude"
+            assert "--model" in command
+            model_idx = command.index("--model")
+            assert command[model_idx + 1] == "glm-5.1"
             assert kwargs["cwd"] == Path.cwd()
             assert settings_path.exists()
             assert json.loads(settings_path.read_text(encoding="utf-8"))["env"][

@@ -129,6 +129,16 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--codex-config",
+        dest="codex_config",
+        help=(
+            "Path to a Codex config.toml file (model/provider settings).  "
+            "When used with -c pointing to an auth.json, both files are "
+            "injected into the sandbox.  Can also be used alone — the "
+            "auth.json is then read from ~/.codex/auth.json."
+        ),
+    )
+    parser.add_argument(
         "-e", "--env",
         help="Named environment profile",
     )
@@ -148,11 +158,15 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
 # --- handlers ---------------------------------------------------------------
 
 
-def _resolve_config_path(args: argparse.Namespace) -> str:
-    """Resolve the requested config path from ``-c`` or ``-e``."""
+def _resolve_config_path(args: argparse.Namespace) -> str | None:
+    """Resolve the requested config path from ``-c`` or ``-e``.
+
+    Returns *None* when only ``--codex-config`` is provided (without ``-c``).
+    """
 
     config_path: str | None = getattr(args, "config", None)
     env_name: str | None = getattr(args, "env", None)
+    codex_config: str | None = getattr(args, "codex_config", None)
 
     if config_path:
         return str(Path(config_path).resolve())
@@ -165,8 +179,12 @@ def _resolve_config_path(args: argparse.Namespace) -> str:
             sys.exit(1)
         return env_profile["config_path"]
 
+    # Allow --codex-config alone (no -c required)
+    if codex_config:
+        return None
+
     print(
-        "Error: Either -c/--config or -e/--env must be provided.",
+        "Error: Either -c/--config, -e/--env, or --codex-config must be provided.",
         file=sys.stderr,
     )
     sys.exit(1)
@@ -248,8 +266,6 @@ def _build_interactive_command(adapter: BaseSubprocessAdapter) -> list[str]:
             command.extend(["--model", adapter.model])
         if adapter.sandbox:
             command.extend(["--sandbox", adapter.sandbox])
-        if adapter.approval_mode:
-            command.extend(["--ask-for-approval", adapter.approval_mode])
         if adapter.config_overrides:
             for key, value in adapter.config_overrides.items():
                 command.extend(["-c", f"{key}={value}"])
@@ -320,7 +336,12 @@ def _run_interactive_command(
         sys.exit(completed.returncode)
 
 
-def _run_interactive(config_path: str, config_format: str, agent_type: str | None) -> None:
+def _run_interactive(
+    config_path: str,
+    config_format: str,
+    agent_type: str | None,
+    codex_config: str | None = None,
+) -> None:
     """Launch an agent interactively with the requested config."""
 
     cwd = Path.cwd()
@@ -379,12 +400,14 @@ def _run_interactive(config_path: str, config_format: str, agent_type: str | Non
             config_format,
             agent_type,
         )
-        adapter = create_adapter_from_config_file(config_path, effective_type)
+        adapter = create_adapter_from_config_file(
+            config_path, effective_type, codex_config_path=codex_config,
+        )
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    command = ["claude"] if effective_type == "claude_code" else ["codex"]
+    command = _build_interactive_command(adapter)
     _run_interactive_command(command, adapter.default_isolation, cwd)
 
 
@@ -393,6 +416,28 @@ def _handle_run(args: argparse.Namespace) -> None:
 
     config_path = _resolve_config_path(args)
     agent_type: str | None = getattr(args, "agent_type", None)
+    codex_config: str | None = getattr(args, "codex_config", None)
+
+    if codex_config:
+        codex_config = str(Path(codex_config).resolve())
+
+    # --- codex-config-only shortcut (no -c) --------------------------------
+    if config_path is None:
+        # Only reachable when --codex-config is given without -c
+        prompt = _resolve_prompt(args)
+        if prompt is None:
+            if not sys.stdin.isatty():
+                print(
+                    "Error: A prompt is required when stdin is piped. "
+                    "Use -p/--prompt or provide non-empty stdin.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            # Interactive mode with codex-config only
+            _run_codex_config_only(codex_config, interactive=True)
+            return
+        _run_codex_config_only(codex_config, prompt=prompt)
+        return
 
     # 1. Detect config format
     try:
@@ -411,7 +456,7 @@ def _handle_run(args: argparse.Namespace) -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
-        _run_interactive(config_path, config_format, agent_type)
+        _run_interactive(config_path, config_format, agent_type, codex_config)
         return
 
     # 3. Dispatch based on format
@@ -420,7 +465,7 @@ def _handle_run(args: argparse.Namespace) -> None:
     elif config_format == "second_home":
         _run_second_home(config_path, agent_type, prompt)
     else:
-        _run_native_config(config_path, config_format, agent_type, prompt)
+        _run_native_config(config_path, config_format, agent_type, prompt, codex_config)
 
 
 def _run_second_home(
@@ -441,6 +486,43 @@ def _run_second_home(
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
+
+    request = AgentRequest(task_prompt=prompt)
+
+    try:
+        result = adapter.run(request)
+    except Exception as exc:
+        print(f"Error executing agent: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    _print_result(result)
+
+
+def _run_codex_config_only(
+    codex_config: str,
+    prompt: str | None = None,
+    interactive: bool = False,
+) -> None:
+    """Handle the case where only ``--codex-config`` is provided (no ``-c``).
+
+    The ``auth.json`` is read from ``~/.codex/auth.json``.
+    """
+
+    try:
+        adapter = create_adapter_from_config_file(
+            config_path=None,
+            agent_type="codex",
+            codex_config_path=codex_config,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if interactive:
+        cwd = Path.cwd()
+        command = _build_interactive_command(adapter)
+        _run_interactive_command(command, adapter.default_isolation, cwd)
+        return
 
     request = AgentRequest(task_prompt=prompt)
 
@@ -489,6 +571,7 @@ def _run_native_config(
     config_format: str,
     agent_type: str | None,
     prompt: str,
+    codex_config: str | None = None,
 ) -> None:
     """Handle a native Claude Code or Codex config file."""
 
@@ -498,7 +581,9 @@ def _run_native_config(
             config_format,
             agent_type,
         )
-        adapter = create_adapter_from_config_file(config_path, effective_type)
+        adapter = create_adapter_from_config_file(
+            config_path, effective_type, codex_config_path=codex_config,
+        )
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -591,8 +676,13 @@ def main() -> None:
         return
 
     # If ``command`` is ``"run"`` *or* the user passed top-level flags
-    # (``-c`` / ``-e``), treat it as a run invocation.
-    if command == "run" or getattr(args, "config", None) or getattr(args, "env", None):
+    # (``-c`` / ``-e`` / ``--codex-config``), treat it as a run invocation.
+    if (
+        command == "run"
+        or getattr(args, "config", None)
+        or getattr(args, "env", None)
+        or getattr(args, "codex_config", None)
+    ):
         _handle_run(args)
         return
 

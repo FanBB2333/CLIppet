@@ -233,6 +233,129 @@ class TestCodexSingleFileMode:
 
 
 # ---------------------------------------------------------------------------
+# Codex dual-file mode (auth.json + config.toml)
+# ---------------------------------------------------------------------------
+
+
+class TestCodexDualFileMode:
+    """Test passing both auth.json and config.toml to create a Codex adapter."""
+
+    def test_both_files_mapped(self, tmp_path):
+        auth = tmp_path / "auth.json"
+        auth.write_text(json.dumps({"OPENAI_API_KEY": "sk-dual"}))
+
+        toml = tmp_path / "config.toml"
+        toml.write_text(
+            'model = "gpt-5.4-mini"\nmodel_provider = "wzw"\n'
+        )
+
+        adapter = create_adapter_from_codex_config(auth, config_toml_path=toml)
+        iso = adapter.default_isolation
+        assert ".codex/auth.json" in iso.credential_files
+        assert ".codex/config.toml" in iso.credential_files
+        assert iso.credential_files[".codex/config.toml"] == str(toml.resolve())
+        assert iso.env_overrides.get("OPENAI_API_KEY") == "sk-dual"
+
+    def test_model_read_from_toml(self, tmp_path):
+        auth = tmp_path / "auth.json"
+        auth.write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
+
+        toml = tmp_path / "config.toml"
+        toml.write_text('model = "gpt-5.4-mini"\n')
+
+        adapter = create_adapter_from_codex_config(auth, config_toml_path=toml)
+        assert adapter.model == "gpt-5.4-mini"
+
+    def test_adapter_kwargs_model_overrides_toml(self, tmp_path):
+        auth = tmp_path / "auth.json"
+        auth.write_text(json.dumps({"OPENAI_API_KEY": "sk-test"}))
+
+        toml = tmp_path / "config.toml"
+        toml.write_text('model = "gpt-5.4-mini"\n')
+
+        adapter = create_adapter_from_codex_config(
+            auth, config_toml_path=toml, model="o4-mini"
+        )
+        assert adapter.model == "o4-mini"
+
+    def test_toml_only_mode_uses_system_auth(self, tmp_path, monkeypatch):
+        """When only config.toml is given, auth.json comes from ~/.codex/."""
+        fake_home = tmp_path / "fakehome"
+        fake_home.mkdir()
+        codex_dir = fake_home / ".codex"
+        codex_dir.mkdir()
+        sys_auth = codex_dir / "auth.json"
+        sys_auth.write_text(json.dumps({"OPENAI_API_KEY": "sk-system"}))
+
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+
+        toml = tmp_path / "config.toml"
+        toml.write_text('model = "custom-model"\n')
+
+        adapter = create_adapter_from_codex_config(
+            config_path=None, config_toml_path=toml,
+        )
+        iso = adapter.default_isolation
+        assert ".codex/auth.json" in iso.credential_files
+        assert iso.credential_files[".codex/auth.json"] == str(sys_auth)
+        assert ".codex/config.toml" in iso.credential_files
+        assert adapter.model == "custom-model"
+        assert iso.env_overrides.get("OPENAI_API_KEY") == "sk-system"
+
+    def test_toml_only_mode_raises_without_system_auth(self, tmp_path, monkeypatch):
+        """When only config.toml is given and no ~/.codex/auth.json exists."""
+        fake_home = tmp_path / "empty-home"
+        fake_home.mkdir()
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_home))
+
+        toml = tmp_path / "config.toml"
+        toml.write_text('model = "m"\n')
+
+        with pytest.raises(FileNotFoundError, match="auth.json"):
+            create_adapter_from_codex_config(
+                config_path=None, config_toml_path=toml,
+            )
+
+    def test_create_adapter_from_config_file_with_codex_config(self, tmp_path):
+        """Test the unified dispatcher passes codex_config_path through."""
+        auth = tmp_path / "auth.json"
+        auth.write_text(json.dumps({"OPENAI_API_KEY": "sk-dispatch"}))
+
+        toml = tmp_path / "config.toml"
+        toml.write_text('model = "gpt-5.4-mini"\n')
+
+        adapter = create_adapter_from_config_file(
+            str(auth), agent_type="codex", codex_config_path=str(toml),
+        )
+        assert adapter.agent_name == "codex"
+        assert adapter.model == "gpt-5.4-mini"
+        iso = adapter.default_isolation
+        assert ".codex/config.toml" in iso.credential_files
+
+    def test_codex_build_command_skips_model_when_none(self):
+        """When model=None, --model should not appear in the command."""
+        from clippet.adapters.codex import CodexAdapter
+        from clippet.models import AgentRequest
+
+        adapter = CodexAdapter(model=None)
+        request = AgentRequest(task_prompt="Test", workspace_dir="/tmp")
+        cmd = adapter.build_command(request)
+        assert "--model" not in cmd
+
+    def test_codex_build_command_includes_model_when_set(self):
+        """When model is set, --model should appear in the command."""
+        from clippet.adapters.codex import CodexAdapter
+        from clippet.models import AgentRequest
+
+        adapter = CodexAdapter(model="gpt-5.4-mini")
+        request = AgentRequest(task_prompt="Test", workspace_dir="/tmp")
+        cmd = adapter.build_command(request)
+        assert "--model" in cmd
+        idx = cmd.index("--model")
+        assert cmd[idx + 1] == "gpt-5.4-mini"
+
+
+# ---------------------------------------------------------------------------
 # AGENT_CONFIG_PATHS
 # ---------------------------------------------------------------------------
 

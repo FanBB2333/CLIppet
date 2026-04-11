@@ -184,19 +184,14 @@ class TestCodexAdapter:
         sandbox_idx = cmd.index("--sandbox")
         assert cmd[sandbox_idx + 1] == "workspace-write"
         
-        # Check approval mode
-        assert "--ask-for-approval" in cmd
-        approval_idx = cmd.index("--ask-for-approval")
-        assert cmd[approval_idx + 1] == "never"
-        
-        # Check quiet flag
-        assert "-q" in cmd
+        # Check full-auto mode
+        assert "--full-auto" in cmd
 
     def test_build_command_with_options(self):
-        """Verify custom sandbox and writable_root appear in command."""
+        """Verify custom sandbox and add_dirs appear in command."""
         adapter = CodexAdapter(
             sandbox="danger-full-access",
-            writable_root="/var/data",
+            add_dirs=["/var/data"],
         )
         request = AgentRequest(
             task_prompt="Write tests",
@@ -209,10 +204,10 @@ class TestCodexAdapter:
         sandbox_idx = cmd.index("--sandbox")
         assert cmd[sandbox_idx + 1] == "danger-full-access"
         
-        # Check custom writable root
-        assert "-w" in cmd
-        w_idx = cmd.index("-w")
-        assert cmd[w_idx + 1] == "/var/data"
+        # Check additional writable directory
+        assert "--add-dir" in cmd
+        add_idx = cmd.index("--add-dir")
+        assert cmd[add_idx + 1] == "/var/data"
 
     def test_parse_output_success(self):
         """Test parsing successful Codex output."""

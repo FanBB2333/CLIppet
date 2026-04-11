@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 from typing import Literal
 
@@ -131,44 +132,92 @@ def create_adapter_from_claude_config(
     return adapter
 
 
+def _read_model_from_codex_toml(toml_path: Path) -> str | None:
+    """Extract the ``model`` value from a Codex ``config.toml``.
+
+    Uses a simple regex so we don't need a TOML parser dependency.
+    """
+
+    try:
+        text = toml_path.read_text(encoding="utf-8")
+        match = re.search(r'^model\s*=\s*"([^"]+)"', text, re.MULTILINE)
+        if match:
+            return match.group(1)
+    except Exception:
+        pass
+    return None
+
+
 def create_adapter_from_codex_config(
-    config_path: Path | str,
+    config_path: Path | str | None = None,
+    config_toml_path: Path | str | None = None,
     **adapter_kwargs,
 ) -> CodexAdapter:
-    """Create a :class:`CodexAdapter` from a Codex JSON config file.
+    """Create a :class:`CodexAdapter` from Codex credential/config files.
 
-    In single-file mode the auth file (``auth.json``) is copied into the
-    sandbox.  If the real ``~/.codex/config.toml`` exists it is
-    *also* copied so that model / provider settings remain available.
+    Supports three usage patterns:
+
+    * **auth.json only** (``config_path`` set): the ``config.toml`` is read
+      from the real ``~/.codex/config.toml`` if it exists.
+    * **config.toml only** (``config_toml_path`` set): the ``auth.json`` is
+      read from the real ``~/.codex/auth.json``.
+    * **Both files** (both set): both are copied into the sandbox.
 
     Args:
-        config_path: Path to the Codex JSON config file (typically
-            ``auth.json``).
+        config_path: Path to the Codex auth JSON file (typically
+            ``auth.json``).  When *None*, falls back to
+            ``~/.codex/auth.json``.
+        config_toml_path: Path to the Codex ``config.toml``.  When *None*,
+            falls back to ``~/.codex/config.toml``.
         **adapter_kwargs: Extra keyword arguments forwarded to
             :class:`CodexAdapter`.
 
     Returns:
         A configured :class:`CodexAdapter` instance.
+
+    Raises:
+        FileNotFoundError: If neither an explicit nor a fallback auth file
+            can be located.
     """
 
-    config_path = Path(config_path).resolve()
+    # --- Resolve auth.json --------------------------------------------------
+    if config_path is not None:
+        auth_path = Path(config_path).resolve()
+    else:
+        auth_path = Path.home() / ".codex" / "auth.json"
+        if not auth_path.is_file():
+            raise FileNotFoundError(
+                "No auth.json provided and ~/.codex/auth.json does not exist."
+            )
 
-    with open(config_path, "r", encoding="utf-8") as f:
-        data: dict = json.load(f)
+    # --- Resolve config.toml ------------------------------------------------
+    if config_toml_path is not None:
+        toml_path: Path | None = Path(config_toml_path).resolve()
+    else:
+        candidate = Path.home() / ".codex" / "config.toml"
+        toml_path = candidate if candidate.is_file() else None
 
+    # --- Read auth.json and extract env vars --------------------------------
     env_overrides: dict[str, str] = {}
-    for key in ("OPENAI_API_KEY", "OPENAI_BASE_URL"):
-        if key in data:
-            env_overrides[key] = data[key]
+    if auth_path.is_file():
+        with open(auth_path, "r", encoding="utf-8") as f:
+            data: dict = json.load(f)
+        for key in ("OPENAI_API_KEY", "OPENAI_BASE_URL"):
+            if key in data:
+                env_overrides[key] = data[key]
 
     credential_files: dict[str, str] = {
-        ".codex/auth.json": str(config_path),
+        ".codex/auth.json": str(auth_path),
     }
 
-    # Automatically carry over the real config.toml if it exists
-    real_config_toml = Path.home() / ".codex" / "config.toml"
-    if real_config_toml.is_file():
-        credential_files[".codex/config.toml"] = str(real_config_toml)
+    if toml_path is not None and toml_path.is_file():
+        credential_files[".codex/config.toml"] = str(toml_path)
+
+        # Read model from config.toml so the CLI --model flag is consistent
+        if "model" not in adapter_kwargs:
+            model = _read_model_from_codex_toml(toml_path)
+            if model:
+                adapter_kwargs["model"] = model
 
     isolation = IsolationConfig(
         credential_files=credential_files,
@@ -233,8 +282,9 @@ def create_adapter_with_second_home(
 
 
 def create_adapter_from_config_file(
-    config_path: Path | str,
+    config_path: Path | str | None = None,
     agent_type: str | None = None,
+    codex_config_path: Path | str | None = None,
 ) -> BaseSubprocessAdapter:
     """Create an adapter from a standalone config file **or** directory.
 
@@ -244,10 +294,14 @@ def create_adapter_from_config_file(
 
     Args:
         config_path: Path to the JSON configuration file **or** a directory
-            to use as second home.
+            to use as second home.  May be *None* when *codex_config_path*
+            is provided (auth.json will be read from ``~/.codex/``).
         agent_type: Explicit agent type override (``"claude_code"`` or
             ``"codex"``).  When *None*, the type is inferred from the
             file contents.
+        codex_config_path: Optional path to a Codex ``config.toml`` file.
+            When provided together with a Codex *config_path* (or on its
+            own), both files are wired into the sandbox.
 
     Returns:
         A configured adapter instance.
@@ -257,6 +311,18 @@ def create_adapter_from_config_file(
             :func:`load_config` / :func:`create_runner_from_config`
             instead), or if the format is unrecognisable.
     """
+
+    # --- codex_config_path without config_path → codex-only shortcut -------
+    if config_path is None and codex_config_path is not None:
+        return create_adapter_from_codex_config(
+            config_path=None,
+            config_toml_path=codex_config_path,
+        )
+
+    if config_path is None:
+        raise ValueError(
+            "Either -c/--config or --codex-config must be provided."
+        )
 
     detected = detect_config_type(config_path)
 
@@ -285,7 +351,10 @@ def create_adapter_from_config_file(
         return create_adapter_from_claude_config(config_path)
 
     if effective_type == "codex":
-        return create_adapter_from_codex_config(config_path)
+        return create_adapter_from_codex_config(
+            config_path=config_path,
+            config_toml_path=codex_config_path,
+        )
 
     raise ValueError(
         f"Unknown agent type: '{effective_type}'. "

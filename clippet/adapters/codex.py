@@ -18,31 +18,34 @@ class CodexAdapter(BaseSubprocessAdapter):
 
     def __init__(
         self,
-        model: str = "o4-mini",
+        model: str | None = "o4-mini",
         sandbox: str = "workspace-write",
-        approval_mode: str = "never",
-        quiet: bool = True,
-        writable_root: str | None = None,
+        full_auto: bool = True,
+        cd: str | None = None,
+        add_dirs: list[str] | None = None,
         config_overrides: dict[str, str] | None = None,
     ) -> None:
         """Initialize the Codex adapter.
         
         Args:
-            model: Model name to use (default: o4-mini).
-            sandbox: Sandbox policy - read-only, workspace-write, or danger-full-access
-                     (default: workspace-write).
-            approval_mode: Approval mode - untrusted, on-failure, on-request, or never
-                           (default: never for non-interactive use).
-            quiet: Enable quiet mode for non-interactive execution (default: True).
-            writable_root: Optional writable root directory path.
-            config_overrides: Optional dict of key=value configuration overrides.
+            model: Model name to use (default: o4-mini).  Set to *None*
+                to omit the ``--model`` flag and let the Codex CLI read the
+                model from its own ``config.toml``.
+            sandbox: Sandbox policy — ``read-only``, ``workspace-write``,
+                or ``danger-full-access`` (default: ``workspace-write``).
+            full_auto: When *True* (the default), pass ``--full-auto`` so
+                that codex runs without interactive approval prompts.
+            cd: Optional working-root directory (``-C``/``--cd``).
+            add_dirs: Additional writable directories (``--add-dir``).
+            config_overrides: Optional dict of ``key=value`` configuration
+                overrides passed via ``-c``.
         """
         super().__init__()
         self.model = model
         self.sandbox = sandbox
-        self.approval_mode = approval_mode
-        self.quiet = quiet
-        self.writable_root = writable_root
+        self.full_auto = full_auto
+        self.cd = cd
+        self.add_dirs = add_dirs
         self.config_overrides = config_overrides
 
     @property
@@ -60,52 +63,54 @@ class CodexAdapter(BaseSubprocessAdapter):
             List of command arguments to execute.
         """
         cmd: list[str] = ["codex", "exec"]
-        
-        # Add the prompt as a positional argument
-        cmd.append(request.task_prompt)
-        
-        # Model - use request.model if set, otherwise use self.model
+
+        # Model — use request.model if set, otherwise use self.model.
+        # When both are None, skip --model entirely (let config.toml decide).
         effective_model = request.model if request.model else self.model
-        cmd.extend(["--model", effective_model])
-        
+        if effective_model:
+            cmd.extend(["--model", effective_model])
+
         # Sandbox policy
         cmd.extend(["--sandbox", self.sandbox])
-        
-        # Approval mode
-        cmd.extend(["--ask-for-approval", self.approval_mode])
-        
-        # Quiet mode
-        if self.quiet:
-            cmd.append("-q")
-        
-        # Writable root - default to workspace_dir if not explicitly set
-        writable_root = self.writable_root
-        if writable_root is None:
-            writable_root = str(request.workspace_dir)
-        cmd.extend(["-w", writable_root])
-        
-        # Config overrides
+
+        # Full-auto mode (no interactive approval prompts)
+        if self.full_auto:
+            cmd.append("--full-auto")
+
+        # Working-root directory
+        cd = self.cd
+        if cd is None:
+            cd = str(request.workspace_dir)
+        cmd.extend(["--cd", cd])
+
+        # Additional writable directories
+        if self.add_dirs:
+            for d in self.add_dirs:
+                cmd.extend(["--add-dir", d])
+
+        # Config overrides (-c key=value)
         if self.config_overrides:
             for key, value in self.config_overrides.items():
                 cmd.extend(["-c", f"{key}={value}"])
-        
+
         # Handle extra_args from request
         if request.extra_args:
             for key, value in request.extra_args.items():
                 if key.startswith("-"):
-                    # Already formatted as a flag
                     if value is True:
                         cmd.append(key)
                     elif value is not False and value is not None:
                         cmd.extend([key, str(value)])
                 else:
-                    # Convert key to flag format
                     flag = f"--{key.replace('_', '-')}"
                     if value is True:
                         cmd.append(flag)
                     elif value is not False and value is not None:
                         cmd.extend([flag, str(value)])
-        
+
+        # Prompt is a positional argument — place it last.
+        cmd.append(request.task_prompt)
+
         return cmd
 
     def get_stdin_input(self, request: AgentRequest) -> str | None:
