@@ -67,70 +67,85 @@ print(f"Tools used: {[t.tool_name for t in result.tool_calls]}")
 
 CLIppet can also be used as a command-line launcher for Claude Code and Codex.
 
-### Launch Claude interactively with a native Claude config
+### Interactive mode — the simplest way to get started
+
+The fastest way to use CLIppet is to pass a credential file and drop into an
+interactive agent session.  No Python code required.
+
+**Claude** (native `claude` config):
 
 ```bash
-clippet -c /home/l1ght/repos/CLIppet/glm4-7-base.json claude
+clippet -c /path/to/claude-settings.json claude
 ```
 
-If `clippet` is not installed as a shell command yet, run it as a module:
-
-```bash
-python3 -m clippet.cli -c /home/l1ght/repos/CLIppet/glm4-7-base.json claude
-```
-
-This starts the real `claude` interactive session and injects the selected JSON
-file as an isolated `~/.claude/settings.json`.
-
-### Run Claude non-interactively with a native Claude config
-
-```bash
-clippet -c /home/l1ght/repos/CLIppet/glm4-7-base.json claude -p "你是什么模型，只回答模型名"
-```
-
-### Launch Codex interactively with a native Codex config
+**Codex** (auth file only — model config is read from `~/.codex/config.toml`):
 
 ```bash
 clippet -c /path/to/auth.json codex
 ```
 
-### Register and reuse named environments
-
-Use `-e` when you want to refer to a saved config path by name:
+**Codex with an explicit `config.toml`** (model, provider, base URL):
 
 ```bash
-clippet env add glm47 /home/l1ght/repos/CLIppet/glm4-7-base.json
-clippet -e glm47 claude
+clippet -c /path/to/auth.json --codex-config /path/to/config.toml codex
 ```
 
-You can inspect registered environments with:
+Both files are injected into an isolated sandbox `~/.codex/` so your real
+config is never touched.  The model is read automatically from `config.toml`;
+you do not need to pass `--model` separately.
+
+You can also supply only the `config.toml` — the `auth.json` is then read from
+`~/.codex/auth.json`:
 
 ```bash
+clippet --codex-config /path/to/config.toml codex
+```
+
+If `clippet` is not on your `PATH`, run it as a module:
+
+```bash
+python3 -m clippet.cli -c /path/to/auth.json --codex-config /path/to/config.toml codex
+```
+
+### Non-interactive (single prompt)
+
+Add `-p` to run once and print the result without entering interactive mode:
+
+```bash
+clippet -c /path/to/claude-settings.json claude -p "你是什么模型，只回答模型名"
+clippet -c /path/to/auth.json --codex-config /path/to/config.toml codex -p "say hi"
+```
+
+### Named environments
+
+Save a config path under a short alias so you don't have to type the full path:
+
+```bash
+clippet env add mycodex /path/to/auth.json
+clippet -e mycodex codex
 clippet env list
 ```
 
-### Use a CLIppet composite config
+### CLIppet composite config (advanced)
 
-When the config file is a CLIppet JSON/YAML config containing multiple adapters,
-specify which agent to launch:
+When you need multiple adapters with shared credential profiles, use a CLIppet
+YAML/JSON config file:
 
 ```bash
 clippet -c clippet-config.json claude
-clippet -c clippet-config.json codex
+clippet -c clippet-config.json codex -p "review the current repository"
 ```
 
-For non-interactive execution with a composite config:
-
-```bash
-clippet -c clippet-config.json claude -p "review the current repository"
-```
+See the [Configuration](#configuration-yaml-or-json) section for the full schema.
 
 ### Behavior summary
 
-- `-c` accepts a native Claude config, a native Codex config, or a CLIppet composite config.
-- `-e` resolves a previously registered environment name to a config path.
-- With `-p`, CLIppet runs the agent non-interactively and prints the result.
-- Without `-p`, CLIppet launches the underlying CLI in interactive mode.
+| Flag | Meaning |
+|------|---------|
+| `-c <file>` | Native agent config (Claude JSON, Codex auth.json) or CLIppet composite config |
+| `--codex-config <file>` | Codex `config.toml` (model / provider). Can be combined with `-c` or used alone |
+| `-e <name>` | Resolve a saved environment alias to a config path |
+| `-p <prompt>` | Run once non-interactively; omit to launch interactive session |
 
 ## Parallel Execution
 
@@ -233,6 +248,51 @@ runner = create_runner_from_config(config)
 result = runner.execute("claude-personal", request)
 ```
 
+## How It Works
+
+```
+  ┌─────────────────────────────────────────────────────────────────┐
+  │                          CLIppet                                │
+  │                                                                 │
+  │   CLI: clippet -c auth.json --codex-config cfg.toml codex       │
+  │   API: runner.execute("codex", AgentRequest(...))               │
+  │                          │                                      │
+  │                          ▼                                      │
+  │          ┌───────────────────────────────┐                      │
+  │          │     Config / Auto-detection   │                      │
+  │          │  native Claude · Codex · YAML │                      │
+  │          └───────────────┬───────────────┘                      │
+  │                          ▼                                      │
+  │     ┌────────────────────────────────────────┐                  │
+  │     │              Adapter layer             │                  │
+  │     │  ClaudeAdapter · CodexAdapter · Qoder  │                  │
+  │     │  build_command() · parse_output()      │                  │
+  │     └────────────────────┬───────────────────┘                  │
+  │                          ▼                                      │
+  │          ┌───────────────────────────────┐                      │
+  │          │      Sandbox / Isolation      │                      │
+  │          │  • temp HOME directory        │                      │
+  │          │  • inject credential files    │                      │
+  │          │  • env var overrides          │                      │
+  │          └───────────────┬───────────────┘                      │
+  └──────────────────────────┼──────────────────────────────────────┘
+                             ▼
+           ┌─────────────────────────────────┐
+           │      CLI Agent subprocess       │
+           │  claude / codex exec / qoder    │
+           └─────────────────┬───────────────┘
+                             ▼
+           ┌─────────────────────────────────┐
+           │    Output parser → AgentResult  │
+           │  is_success · tool_calls · time │
+           └─────────────────────────────────┘
+```
+
+- **Config detection** auto-identifies file format (Claude JSON / Codex auth.json / CLIppet YAML) so you rarely need to specify the type explicitly.
+- **Adapter layer** translates a generic `AgentRequest` into tool-specific CLI flags and parses the raw output back into a structured `AgentResult`.
+- **Sandbox** creates an isolated `$HOME` per run, injects credential files and env vars, then cleans up — your real config is never modified.
+- **ClippetRunner** wraps multiple adapters and dispatches them in parallel via a thread pool or asyncio.
+
 ## Architecture
 
 ```
@@ -267,7 +327,7 @@ clippet/
 | Adapter | CLI Tool | Key Flags |
 |---------|----------|-----------|
 | `ClaudeAdapter` | `claude` | `--model`, `--permission-mode`, `--max-turns`, `--allowed-tools` |
-| `CodexAdapter` | `codex exec` | `--model`, `--sandbox`, `--ask-for-approval` |
+| `CodexAdapter` | `codex exec` | `--model`, `--sandbox`, `--full-auto`, `--cd`, `--add-dir` |
 | `QoderAdapter` | `qoder chat` | `--mode`, `-a` (add files), `--profile` |
 
 ### Extending with Custom Adapters
