@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from clippet.cli import _build_parser, main
+from clippet.config.registry import AdapterConfig, ClippetConfig
 from clippet.models import AgentResult
 
 
@@ -58,6 +59,13 @@ class TestCliArgumentParsing:
         assert args.command == "env"
         assert args.env_action == "remove"
         assert args.name == "myenv"
+
+    def test_composite_adapter_name(self) -> None:
+        """Composite configs should accept adapter names, not just built-in types."""
+        args = self._parse(["-c", "config.json", "claude-personal"])
+
+        assert args.config == "config.json"
+        assert args.agent_type == "claude-personal"
 
 
 class TestCliExecution:
@@ -127,6 +135,132 @@ class TestCliExecution:
         mock_runner.execute.assert_called_once()
         call_args = mock_runner.execute.call_args
         assert call_args[0][0] == "claude"
+
+    def test_run_with_single_adapter_clippet_config_auto_selects_adapter_name(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Single-adapter composite configs should not require an explicit agent."""
+        from clippet.cli import _handle_run
+
+        mock_runner = MagicMock()
+        mock_runner.execute.return_value = AgentResult(
+            is_success=True,
+            raw_output="composite done",
+        )
+
+        cfg = tmp_path / "config.json"
+        cfg.write_text(json.dumps({"adapters": []}))
+
+        args = argparse.Namespace(
+            config=str(cfg),
+            env=None,
+            prompt="build it",
+            agent_type=None,
+            codex_config=None,
+        )
+        config = ClippetConfig(
+            adapters=[
+                AdapterConfig(
+                    adapter_type="claude",
+                    name="claude-personal",
+                )
+            ]
+        )
+
+        with (
+            patch("clippet.cli.detect_config_type", return_value="clippet"),
+            patch("clippet.cli.load_config", return_value=config),
+            patch(
+                "clippet.cli.create_runner_from_config",
+                return_value=mock_runner,
+            ),
+        ):
+            _handle_run(args)
+
+        mock_runner.execute.assert_called_once()
+        call_args = mock_runner.execute.call_args
+        assert call_args[0][0] == "claude-personal"
+
+    def test_interactive_single_adapter_clippet_config_auto_selects_adapter_name(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        """Interactive composite launch should infer the only adapter name."""
+        from clippet.adapters.claude import ClaudeAdapter
+
+        cfg = tmp_path / "config.json"
+        cfg.write_text(json.dumps({"adapters": []}))
+
+        config = ClippetConfig(
+            adapters=[
+                AdapterConfig(
+                    adapter_type="claude",
+                    name="claude-personal",
+                    options={"model": "sonnet"},
+                )
+            ]
+        )
+        mock_runner = MagicMock()
+        mock_runner.get_adapter.return_value = ClaudeAdapter(model="sonnet")
+
+        monkeypatch.setattr(sys, "argv", ["clippet", "-c", str(cfg)])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+        def fake_run(command, **kwargs):
+            assert command == [
+                "claude",
+                "--model",
+                "sonnet",
+                "--permission-mode",
+                "bypassPermissions",
+            ]
+            assert kwargs["cwd"] == Path.cwd()
+            return MagicMock(returncode=0)
+
+        with (
+            patch("clippet.cli.detect_config_type", return_value="clippet"),
+            patch("clippet.cli.load_config", return_value=config),
+            patch(
+                "clippet.cli.create_runner_from_config",
+                return_value=mock_runner,
+            ),
+            patch("clippet.cli.subprocess.run", side_effect=fake_run) as mock_run,
+        ):
+            main()
+
+        mock_runner.get_adapter.assert_called_once_with("claude-personal")
+        mock_run.assert_called_once()
+
+    def test_multi_adapter_clippet_config_without_agent_errors(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+        capsys,
+    ) -> None:
+        """Composite configs with multiple adapters should still require an explicit choice."""
+        cfg = tmp_path / "config.json"
+        cfg.write_text(json.dumps({"adapters": []}))
+
+        config = ClippetConfig(
+            adapters=[
+                AdapterConfig(adapter_type="claude", name="claude-personal"),
+                AdapterConfig(adapter_type="codex", name="codex-default"),
+            ]
+        )
+
+        monkeypatch.setattr(sys, "argv", ["clippet", "-c", str(cfg), "-p", "build it"])
+
+        with (
+            patch("clippet.cli.detect_config_type", return_value="clippet"),
+            patch("clippet.cli.load_config", return_value=config),
+            pytest.raises(SystemExit),
+        ):
+            main()
+
+        captured = capsys.readouterr()
+        assert "Available adapters: claude-personal, codex-default" in captured.err
 
     def test_missing_config_and_env(self, monkeypatch) -> None:
         """Verify error when neither -c nor -e provided."""

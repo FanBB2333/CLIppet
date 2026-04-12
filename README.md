@@ -70,24 +70,26 @@ CLIppet can also be used as a command-line launcher for Claude Code and Codex.
 ### Interactive mode — the simplest way to get started
 
 The fastest way to use CLIppet is to pass a credential file and drop into an
-interactive agent session.  No Python code required.
+interactive agent session.  No Python code required.  For native Claude Code
+and Codex configs, CLIppet now infers which terminal to launch from the config
+file format, so you do not need to append `claude` or `codex`.
 
 **Claude** (native `claude` config):
 
 ```bash
-clippet -c /path/to/claude-settings.json claude
+clippet -c /path/to/claude-settings.json
 ```
 
 **Codex** (auth file only — model config is read from `~/.codex/config.toml`):
 
 ```bash
-clippet -c /path/to/auth.json codex
+clippet -c /path/to/auth.json
 ```
 
 **Codex with an explicit `config.toml`** (model, provider, base URL):
 
 ```bash
-clippet -c /path/to/auth.json --codex-config /path/to/config.toml codex
+clippet -c /path/to/auth.json --codex-config /path/to/config.toml
 ```
 
 Both files are injected into an isolated sandbox `~/.codex/` so your real
@@ -98,13 +100,13 @@ You can also supply only the `config.toml` — the `auth.json` is then read from
 `~/.codex/auth.json`:
 
 ```bash
-clippet --codex-config /path/to/config.toml codex
+clippet --codex-config /path/to/config.toml
 ```
 
 If `clippet` is not on your `PATH`, run it as a module:
 
 ```bash
-python3 -m clippet.cli -c /path/to/auth.json --codex-config /path/to/config.toml codex
+python3 -m clippet.cli -c /path/to/auth.json --codex-config /path/to/config.toml
 ```
 
 ### Non-interactive (single prompt)
@@ -112,8 +114,8 @@ python3 -m clippet.cli -c /path/to/auth.json --codex-config /path/to/config.toml
 Add `-p` to run once and print the result without entering interactive mode:
 
 ```bash
-clippet -c /path/to/claude-settings.json claude -p "你是什么模型，只回答模型名"
-clippet -c /path/to/auth.json --codex-config /path/to/config.toml codex -p "say hi"
+clippet -c /path/to/claude-settings.json -p "你是什么模型，只回答模型名"
+clippet -c /path/to/auth.json --codex-config /path/to/config.toml -p "say hi"
 ```
 
 ### Named environments
@@ -122,9 +124,13 @@ Save a config path under a short alias so you don't have to type the full path:
 
 ```bash
 clippet env add mycodex /path/to/auth.json
-clippet -e mycodex codex
+clippet -e mycodex
 clippet env list
 ```
+
+If the saved path points to a native Claude/Codex config, CLIppet auto-detects
+the agent.  If it points to a CLIppet composite config, the same composite
+selection rules below apply.
 
 ### CLIppet composite config (advanced)
 
@@ -132,9 +138,15 @@ When you need multiple adapters with shared credential profiles, use a CLIppet
 YAML/JSON config file:
 
 ```bash
-clippet -c clippet-config.json claude
-clippet -c clippet-config.json codex -p "review the current repository"
+clippet -c single-adapter-config.json
+clippet -c clippet-config.json codex-default -p "review the current repository"
 ```
+
+Rules:
+
+- If the composite config has exactly one adapter, CLIppet selects it automatically.
+- If the composite config has multiple adapters, pass the adapter `name` from the config file.
+- Second-home directory mode still requires an explicit trailing `claude` or `codex`.
 
 See the [Configuration](#configuration-yaml-or-json) section for the full schema.
 
@@ -146,6 +158,7 @@ See the [Configuration](#configuration-yaml-or-json) section for the full schema
 | `--codex-config <file>` | Codex `config.toml` (model / provider). Can be combined with `-c` or used alone |
 | `-e <name>` | Resolve a saved environment alias to a config path |
 | `-p <prompt>` | Run once non-interactively; omit to launch interactive session |
+| `[agent]` | Optional native agent type or composite adapter name. Native configs and single-adapter composite configs can omit it |
 
 ## Parallel Execution
 
@@ -254,7 +267,7 @@ result = runner.execute("claude-personal", request)
   ┌─────────────────────────────────────────────────────────────────┐
   │                          CLIppet                                │
   │                                                                 │
-  │   CLI: clippet -c auth.json --codex-config cfg.toml codex       │
+  │   CLI: clippet -c auth.json --codex-config cfg.toml             │
   │   API: runner.execute("codex", AgentRequest(...))               │
   │                          │                                      │
   │                          ▼                                      │

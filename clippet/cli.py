@@ -149,9 +149,12 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "agent_type",
         nargs="?",
-        choices=["claude", "codex", "qoder"],
         default=None,
-        help="Agent type to run (claude, codex, or qoder)",
+        help=(
+            "Native agent type (claude/codex/qoder) or a composite config "
+            "adapter name. Optional for native config files and "
+            "single-adapter composite configs."
+        ),
     )
 
 
@@ -236,6 +239,26 @@ def _normalize_native_agent_type(
         )
 
     return requested_type
+
+
+def _resolve_clippet_adapter_name(
+    config,
+    agent_type: str | None,
+) -> str:
+    """Resolve the adapter name for a CLIppet composite config."""
+
+    if agent_type:
+        return agent_type
+
+    adapter_names = [adapter.name for adapter in config.adapters]
+    if len(adapter_names) == 1:
+        return adapter_names[0]
+
+    available = ", ".join(adapter_names) if adapter_names else "(none)"
+    raise ValueError(
+        "agent_type is required for CLIppet composite configs with multiple "
+        f"adapters. Available adapters: {available}"
+    )
 
 
 def _build_interactive_command(adapter: BaseSubprocessAdapter) -> list[str]:
@@ -368,18 +391,14 @@ def _run_interactive(
 
     # --- CLIppet composite -------------------------------------------------
     if config_format == "clippet":
-        if not agent_type:
-            print(
-                "Error: agent_type is required for CLIppet composite configs. "
-                "Specify one of: claude, codex, qoder.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
         try:
             config = load_config(config_path)
+            resolved_agent = _resolve_clippet_adapter_name(config, agent_type)
             runner = create_runner_from_config(config)
-            adapter = runner.get_adapter(agent_type)
+            adapter = runner.get_adapter(resolved_agent)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
         except Exception as exc:
             print(f"Error loading config: {exc}", file=sys.stderr)
             sys.exit(1)
@@ -540,17 +559,13 @@ def _run_clippet_composite(
 ) -> None:
     """Handle a CLIppet composite config file."""
 
-    if not agent_type:
-        print(
-            "Error: agent_type is required for CLIppet composite configs. "
-            "Specify one of: claude, codex, qoder.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
     try:
         config = load_config(config_path)
+        resolved_agent = _resolve_clippet_adapter_name(config, agent_type)
         runner = create_runner_from_config(config)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
     except Exception as exc:
         print(f"Error loading config: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -558,7 +573,7 @@ def _run_clippet_composite(
     request = AgentRequest(task_prompt=prompt)
 
     try:
-        result = runner.execute(agent_type, request)
+        result = runner.execute(resolved_agent, request)
     except Exception as exc:
         print(f"Error executing agent: {exc}", file=sys.stderr)
         sys.exit(1)
