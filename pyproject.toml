@@ -1,30 +1,59 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
 name = "clippet"
-version = "0.2.0"
+dynamic = ["version"]
 description = "A unified adapter framework for orchestrating CLI AI agents"
 readme = "README.md"
-license = {text = "MIT"}
+license = { file = "LICENSE" }
 requires-python = ">=3.10"
+authors = [{ name = "L1ght", email = "2504082957@qq.com" }]
+keywords = ["ai", "cli", "agents", "claude", "codex"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+]
 dependencies = [
-    "pydantic>=2.0",
-    "pyyaml>=6.0",
+  "pydantic>=2.0",
+  "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
-api = [
-    "openai>=1.0",
-]
+api = ["openai>=1.0"]
 dev = [
-    "pytest>=7.0",
-    "pytest-asyncio>=0.21",
+  "build>=1.2.2",
+  "pytest>=7.0",
+  "pytest-asyncio>=0.21",
+  "twine>=5.1.1",
 ]
-all = [
-    "clippet[api,dev]",
-]
+all = ["clippet[api,dev]"]
+
+[project.urls]
+Homepage = "https://github.com/FanBB2333/CLIppet"
+Repository = "https://github.com/FanBB2333/CLIppet"
+Issues = "https://github.com/FanBB2333/CLIppet/issues"
 
 [project.scripts]
 clippet = "clippet.cli:main"
+
+[tool.hatch.version]
+path = "clippet/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["clippet"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/clippet",
+  "/tests",
+  "/README.md",
+  "/LICENSE",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
