@@ -12,7 +12,8 @@ from pydantic import BaseModel, Field
 
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.adapters.codex import CodexAdapter
-from clippet.adapters.qoder import QoderAdapter
+from clippet.adapters.gemini import GeminiAdapter
+from clippet.adapters.qodercli import QoderCLIAdapter
 from clippet.models import IsolationConfig
 from clippet.orchestrator import ClippetRunner
 
@@ -42,12 +43,12 @@ class AdapterConfig(BaseModel):
     """Configuration for a single adapter.
 
     Attributes:
-        adapter_type: Type of adapter - "claude", "codex", or "qoder".
+        adapter_type: Type of adapter - "claude", "codex", "qodercli", or "gemini".
         name: Registration name for the adapter in the runner.
         options: Adapter constructor kwargs (model, etc.).
     """
 
-    adapter_type: Literal["claude", "codex", "qoder"]
+    adapter_type: Literal["claude", "codex", "qodercli", "gemini"]
     name: str
     options: dict[str, Any] = Field(default_factory=dict)
 
@@ -112,7 +113,8 @@ def create_runner_from_config(config: ClippetConfig) -> ClippetRunner:
     adapter_classes = {
         "claude": ClaudeAdapter,
         "codex": CodexAdapter,
-        "qoder": QoderAdapter,
+        "gemini": GeminiAdapter,
+        "qodercli": QoderCLIAdapter,
     }
 
     runner = ClippetRunner(max_workers=config.max_workers)

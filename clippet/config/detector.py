@@ -1,10 +1,11 @@
 """Config file format detection and adapter creation for CLIppet.
 
-Supports three input types for ``-c``:
+Supports four input types for ``-c``:
 1. A CLIppet composite JSON/YAML file (has ``adapters`` list).
-2. A native agent config file (Claude Code JSON or Codex JSON).
+2. A native agent config file (Claude Code JSON, Codex JSON, or Gemini .env).
 3. A **directory** path — treated as a "second home" that is used directly
    as ``$HOME`` for the launched agent.
+4. A Gemini .env file (contains GEMINI_API_KEY or GOOGLE_GEMINI_BASE_URL).
 """
 
 from __future__ import annotations
@@ -18,9 +19,13 @@ from typing import Literal
 from clippet.adapters.base import BaseAdapter, BaseSubprocessAdapter
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.adapters.codex import CodexAdapter
+from clippet.adapters.gemini import GeminiAdapter, parse_gemini_env_file
 from clippet.models import IsolationConfig
 
 _CLAUDE_CODE_KEYS = {"effortLevel", "skipDangerousModePermissionPrompt", "permissions"}
+
+# Keys that indicate a Gemini .env configuration
+_GEMINI_ENV_KEYS = {"GEMINI_API_KEY", "GOOGLE_GEMINI_BASE_URL", "GEMINI_MODEL"}
 
 
 # ---------------------------------------------------------------------------
@@ -30,21 +35,21 @@ _CLAUDE_CODE_KEYS = {"effortLevel", "skipDangerousModePermissionPrompt", "permis
 
 def detect_config_type(
     path: Path | str,
-) -> Literal["claude_code", "codex", "clippet", "second_home"]:
+) -> Literal["claude_code", "codex", "gemini", "clippet", "second_home"]:
     """Detect the format of a configuration file **or directory**.
 
     Args:
-        path: Path to a JSON config file **or** a directory to use as second
-            home.
+        path: Path to a JSON config file, .env file, **or** a directory to use
+            as second home.
 
     Returns:
-        One of ``"clippet"``, ``"claude_code"``, ``"codex"``, or
+        One of ``"clippet"``, ``"claude_code"``, ``"codex"``, ``"gemini"``, or
         ``"second_home"``.
 
     Raises:
         ValueError: If the file format cannot be determined.
         FileNotFoundError: If *path* does not exist.
-        json.JSONDecodeError: If the file is not valid JSON.
+        json.JSONDecodeError: If the JSON file is not valid JSON.
     """
 
     path = Path(path)
@@ -53,8 +58,28 @@ def detect_config_type(
     if path.is_dir():
         return "second_home"
 
-    with open(path, "r", encoding="utf-8") as f:
-        data: dict = json.load(f)
+    # --- Check for .env file (Gemini format) -------------------------------
+    if path.suffix == ".env" or path.name == ".env":
+        content = path.read_text(encoding="utf-8")
+        env_map = parse_gemini_env_file(content)
+        if _GEMINI_ENV_KEYS & set(env_map.keys()):
+            return "gemini"
+        raise ValueError(
+            f"Unrecognizable .env format in '{path}'. "
+            "Expected Gemini config with GEMINI_API_KEY or GOOGLE_GEMINI_BASE_URL."
+        )
+
+    # --- Try to parse as JSON ----------------------------------------------
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data: dict = json.load(f)
+    except json.JSONDecodeError:
+        # Not valid JSON - might be a non-.env file with Gemini config
+        content = path.read_text(encoding="utf-8")
+        env_map = parse_gemini_env_file(content)
+        if _GEMINI_ENV_KEYS & set(env_map.keys()):
+            return "gemini"
+        raise
 
     # CLIppet composite format: has an "adapters" list
     if isinstance(data.get("adapters"), list):
@@ -65,6 +90,9 @@ def detect_config_type(
     if isinstance(env, dict):
         if any(key.startswith("ANTHROPIC_") for key in env):
             return "claude_code"
+        # Check for Gemini keys in JSON env format
+        if _GEMINI_ENV_KEYS & set(env.keys()):
+            return "gemini"
 
     if _CLAUDE_CODE_KEYS & data.keys():
         return "claude_code"
@@ -77,7 +105,8 @@ def detect_config_type(
         f"Unrecognizable config format in '{path}'. "
         "Expected a CLIppet composite config (with 'adapters' list), "
         "a Claude Code config (with 'env' containing ANTHROPIC_* keys), "
-        "or a Codex config (with top-level 'OPENAI_API_KEY')."
+        "a Codex config (with top-level 'OPENAI_API_KEY'), "
+        "or a Gemini config (.env with GEMINI_API_KEY)."
     )
 
 
@@ -229,6 +258,47 @@ def create_adapter_from_codex_config(
     return adapter
 
 
+def create_adapter_from_gemini_config(
+    config_path: Path | str,
+    **adapter_kwargs,
+) -> GeminiAdapter:
+    """Create a :class:`GeminiAdapter` from a Gemini .env config file.
+
+    The function reads environment variables from the .env file and wires
+    them into an :class:`IsolationConfig` so they are available inside the
+    sandbox at runtime.
+
+    Args:
+        config_path: Path to the Gemini .env config file.
+        **adapter_kwargs: Extra keyword arguments forwarded to
+            :class:`GeminiAdapter`.
+
+    Returns:
+        A configured :class:`GeminiAdapter` instance.
+    """
+
+    config_path = Path(config_path).resolve()
+    content = config_path.read_text(encoding="utf-8")
+    env_vars = parse_gemini_env_file(content)
+
+    isolation = IsolationConfig(
+        credential_files={
+            ".gemini/.env": str(config_path),
+        },
+        env_overrides=dict(env_vars),
+    )
+
+    # Infer model from env vars when not explicitly provided
+    if "model" not in adapter_kwargs:
+        model = env_vars.get("GEMINI_MODEL")
+        if model:
+            adapter_kwargs["model"] = model
+
+    adapter = GeminiAdapter(**adapter_kwargs)
+    adapter.default_isolation = isolation
+    return adapter
+
+
 # ---------------------------------------------------------------------------
 # Adapter factory — second-home mode
 # ---------------------------------------------------------------------------
@@ -243,11 +313,11 @@ def create_adapter_with_second_home(
 
     The directory at ``home_dir`` is used **directly** as ``$HOME``.  It
     should already contain the appropriate agent config hierarchy (e.g.
-    ``.claude/``, ``.codex/``).
+    ``.claude/``, ``.codex/``, ``.gemini/``).
 
     Args:
         home_dir: Path to the second-home directory.
-        agent_type: ``"claude"`` / ``"claude_code"`` or ``"codex"``.
+        agent_type: ``"claude"`` / ``"claude_code"``, ``"codex"``, or ``"gemini"``.
         **adapter_kwargs: Extra keyword arguments forwarded to the adapter
             constructor.
 
@@ -266,10 +336,12 @@ def create_adapter_with_second_home(
         adapter = ClaudeAdapter(**adapter_kwargs)
     elif agent_type == "codex":
         adapter = CodexAdapter(**adapter_kwargs)
+    elif agent_type == "gemini":
+        adapter = GeminiAdapter(**adapter_kwargs)
     else:
         raise ValueError(
             f"Second-home mode is not supported for agent type '{agent_type}'. "
-            "Supported types: 'claude', 'codex'."
+            "Supported types: 'claude', 'codex', 'gemini'."
         )
 
     adapter.default_isolation = isolation
@@ -293,12 +365,13 @@ def create_adapter_from_config_file(
     factory function.
 
     Args:
-        config_path: Path to the JSON configuration file **or** a directory
-            to use as second home.  May be *None* when *codex_config_path*
-            is provided (auth.json will be read from ``~/.codex/``).
-        agent_type: Explicit agent type override (``"claude_code"`` or
-            ``"codex"``).  When *None*, the type is inferred from the
-            file contents.
+        config_path: Path to the JSON configuration file, .env file, **or** a
+            directory to use as second home.  May be *None* when
+            *codex_config_path* is provided (auth.json will be read from
+            ``~/.codex/``).
+        agent_type: Explicit agent type override (``"claude_code"``,
+            ``"codex"``, or ``"gemini"``).  When *None*, the type is inferred
+            from the file contents.
         codex_config_path: Optional path to a Codex ``config.toml`` file.
             When provided together with a Codex *config_path* (or on its
             own), both files are wired into the sandbox.
@@ -331,7 +404,7 @@ def create_adapter_from_config_file(
         if agent_type is None:
             raise ValueError(
                 "agent_type is required when -c points to a directory "
-                "(second-home mode).  Specify one of: claude, codex."
+                "(second-home mode).  Specify one of: claude, codex, gemini."
             )
         effective_type = "claude_code" if agent_type == "claude" else agent_type
         return create_adapter_with_second_home(
@@ -356,7 +429,10 @@ def create_adapter_from_config_file(
             config_toml_path=codex_config_path,
         )
 
+    if effective_type == "gemini":
+        return create_adapter_from_gemini_config(config_path)
+
     raise ValueError(
         f"Unknown agent type: '{effective_type}'. "
-        "Supported types are: 'claude_code', 'codex'."
+        "Supported types are: 'claude_code', 'codex', 'gemini'."
     )

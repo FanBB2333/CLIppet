@@ -11,7 +11,7 @@ import pytest
 
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.adapters.codex import CodexAdapter
-from clippet.adapters.qoder import QoderAdapter
+from clippet.adapters.qodercli import QoderCLIAdapter
 from clippet.models import AgentRequest, AgentResult
 
 
@@ -235,17 +235,17 @@ class TestCodexAdapter:
         assert result.error_message == "Command failed: file not found"
 
 
-class TestQoderAdapter:
-    """Tests for QoderAdapter command building and output parsing."""
+class TestQoderCLIAdapter:
+    """Tests for QoderCLIAdapter command building and output parsing."""
 
     def test_agent_name(self):
         """Verify adapter returns correct agent name."""
-        adapter = QoderAdapter()
-        assert adapter.agent_name == "qoder"
+        adapter = QoderCLIAdapter()
+        assert adapter.agent_name == "qodercli"
 
     def test_build_command_defaults(self):
         """Verify base command includes required flags with defaults."""
-        adapter = QoderAdapter()
+        adapter = QoderCLIAdapter()
         request = AgentRequest(
             task_prompt="Debug the issue",
             workspace_dir="/tmp/project",
@@ -254,21 +254,24 @@ class TestQoderAdapter:
         cmd = adapter.build_command(request)
         
         # Check base command
-        assert cmd[0] == "qoder"
-        assert cmd[1] == "chat"
+        assert cmd[0] == "qodercli"
         
-        # Check prompt is in command
-        assert "Debug the issue" in cmd
+        # Check prompt is in command via -p flag
+        assert "-p" in cmd
+        p_idx = cmd.index("-p")
+        assert cmd[p_idx + 1] == "Debug the issue"
         
-        # Check default mode
-        assert "--mode" in cmd
-        mode_idx = cmd.index("--mode")
-        assert cmd[mode_idx + 1] == "agent"
+        # Check workspace
+        assert "-w" in cmd
+        w_idx = cmd.index("-w")
+        assert cmd[w_idx + 1] == "/tmp/project"
 
-    def test_build_command_with_files(self):
-        """Verify add_files creates -a flags for each file."""
-        adapter = QoderAdapter(
-            add_files=["main.py", "utils.py", "config.json"],
+    def test_build_command_with_options(self):
+        """Verify optional parameters appear in command."""
+        adapter = QoderCLIAdapter(
+            model="auto",
+            max_turns=25,
+            yolo=True,
         )
         request = AgentRequest(
             task_prompt="Review these files",
@@ -277,18 +280,22 @@ class TestQoderAdapter:
         
         cmd = adapter.build_command(request)
         
-        # Count -a flags
-        a_count = cmd.count("-a")
-        assert a_count == 3
+        # Check model flag
+        assert "--model" in cmd
+        model_idx = cmd.index("--model")
+        assert cmd[model_idx + 1] == "auto"
         
-        # Check files are in command
-        assert "main.py" in cmd
-        assert "utils.py" in cmd
-        assert "config.json" in cmd
+        # Check max-turns flag
+        assert "--max-turns" in cmd
+        turns_idx = cmd.index("--max-turns")
+        assert cmd[turns_idx + 1] == "25"
+        
+        # Check yolo flag
+        assert "--yolo" in cmd
 
     def test_parse_output_success(self):
-        """Test parsing successful Qoder output."""
-        adapter = QoderAdapter()
+        """Test parsing successful QoderCLI output."""
+        adapter = QoderCLIAdapter()
         
         mock_output = "Analysis complete: Found 3 issues"
         
@@ -300,8 +307,8 @@ class TestQoderAdapter:
         assert result.error_message is None
 
     def test_parse_output_error(self):
-        """Test parsing error Qoder output."""
-        adapter = QoderAdapter()
+        """Test parsing error QoderCLI output."""
+        adapter = QoderCLIAdapter()
         
         mock_output = ""
         stderr = "Connection refused"

@@ -152,7 +152,7 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
         nargs="?",
         default=None,
         help=(
-            "Native agent type (claude/codex/qoder) or a composite config "
+            "Native agent type (claude/codex/qodercli) or a composite config "
             "adapter name. Optional for native config files and "
             "single-adapter composite configs."
         ),
@@ -255,9 +255,9 @@ def _normalize_native_agent_type(
     if detected_type not in {"claude_code", "codex"}:
         raise ValueError(f"Unsupported native config type: {detected_type}")
 
-    if agent_type == "qoder":
+    if agent_type == "qodercli":
         raise ValueError(
-            "'qoder' is only supported with CLIppet composite configs. "
+            "'qodercli' is only supported with CLIppet composite configs. "
             "Please use a CLIppet config file instead."
         )
 

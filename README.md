@@ -2,77 +2,32 @@
 
 A unified Python adapter framework for orchestrating heterogeneous CLI AI agents.
 
-CLIppet turns scattered, stateless CLI tools — Claude Code, Codex, Qoder, and others — into strongly-typed, structured-output Python objects with unified execution, isolation, and credential management.
+CLIppet turns scattered, stateless CLI tools — Claude Code, Codex, QoderCLI, Gemini CLI, and others — into strongly-typed, structured-output Python objects with unified execution, isolation, and credential management.
 
-## Why CLIppet?
+## Table of Contents
 
-CLI AI agents are powerful but painful to integrate programmatically:
+1. [Quick Start — CLI Config Switching](#1-quick-start--cli-config-switching)
+2. [Launch Agents with Codex/QoderCLI](#2-launch-agents-with-codexqodercli)
+3. [Named Environments](#3-named-environments)
+4. [Project-level Configuration](#4-project-level-clippetjson)
+5. [Why CLIppet?](#5-why-clippet)
+6. [Features](#6-features)
+7. [Installation](#7-installation)
+8. [Python SDK Quick Start](#8-python-sdk-quick-start)
+9. [Advanced CLI Usage](#9-advanced-cli-usage)
+10. [Parallel Execution](#10-parallel-execution)
+11. [Credential Isolation](#11-credential-isolation)
+12. [Configuration (YAML or JSON)](#12-configuration-yaml-or-json)
+13. [How It Works](#13-how-it-works)
+14. [Architecture](#14-architecture)
+15. [Development](#15-development)
+16. [License](#16-license)
 
-- **No standard interface** — each tool has its own flags, output formats, and execution models
-- **Black-box outputs** — extracting tool calls or intermediate state requires fragile regex or LLM-based post-processing
-- **No isolation** — running multiple agents concurrently with different credentials is error-prone
-- **No orchestration** — coordinating parallel agent execution requires custom boilerplate every time
+---
 
-CLIppet solves all of this with a single `adapter.run(request)` call.
+## 1. Quick Start — CLI Config Switching
 
-## Features
-
-- **Unified Protocol** — consistent `run()` / `run_async()` interface across all adapters
-- **Structured Output** — tool call records, execution time, step counts — no regex hacks
-- **Sandbox Isolation** — per-run credential injection, environment variable filtering, temporary workspaces
-- **Parallel Orchestration** — `ClippetRunner` dispatches multiple agents concurrently via thread pool or asyncio
-- **Declarative Config** — YAML/JSON-based adapter registration with credential profiles
-- **Built-in Adapters** — Claude Code, Codex, and Qoder out of the box; extensible via `BaseSubprocessAdapter`
-
-## Installation
-
-```bash
-pip install clippet
-```
-
-For development:
-
-```bash
-pip install clippet[dev]
-```
-
-> Requires Python 3.10+
-
-## Quick Start
-
-```python
-from clippet import ClippetRunner, AgentRequest
-from clippet.adapters import ClaudeAdapter
-
-# Initialize runner and register adapter
-runner = ClippetRunner(max_workers=4)
-runner.register("claude", ClaudeAdapter(model="sonnet"))
-
-# Create a request
-request = AgentRequest(
-    task_prompt="Find and fix the bug in src/server.py",
-    workspace_dir="/path/to/project",
-    timeout=900,
-)
-
-# Execute
-result = runner.execute("claude", request)
-
-print(f"Success: {result.is_success}")
-print(f"Time: {result.execution_time}s")
-print(f"Tools used: {[t.tool_name for t in result.tool_calls]}")
-```
-
-## CLI Usage
-
-CLIppet can also be used as a command-line launcher for Claude Code and Codex.
-
-### Interactive mode — the simplest way to get started
-
-The fastest way to use CLIppet is to pass a credential file and drop into an
-interactive agent session.  No Python code required.  For native Claude Code
-and Codex configs, CLIppet now infers which terminal to launch from the config
-file format, so you do not need to append `claude` or `codex`.
+The fastest way to use CLIppet is to pass a credential file and drop into an interactive agent session. No Python code required. CLIppet infers which terminal to launch from the config file format.
 
 **Claude** (native `claude` config):
 
@@ -92,33 +47,45 @@ clippet -c /path/to/auth.json
 clippet -c /path/to/auth.json --codex-config /path/to/config.toml
 ```
 
-Both files are injected into an isolated sandbox `~/.codex/` so your real
-config is never touched.  The model is read automatically from `config.toml`;
-you do not need to pass `--model` separately.
-
-You can also supply only the `config.toml` — the `auth.json` is then read from
-`~/.codex/auth.json`:
+**Gemini CLI** (uses `.env` file for configuration):
 
 ```bash
-clippet --codex-config /path/to/config.toml
+clippet -c /path/to/gemini.env
 ```
 
-If `clippet` is not on your `PATH`, run it as a module:
+Both files are injected into an isolated sandbox so your real config is never touched.
+
+---
+
+## 2. Launch Agents with Codex/QoderCLI
+
+CLIppet supports launching interactive sessions with Codex and QoderCLI directly:
+
+**Launch Codex interactively:**
 
 ```bash
-python3 -m clippet.cli -c /path/to/auth.json --codex-config /path/to/config.toml
+clippet codex
+clippet -c /path/to/auth.json codex
 ```
 
-### Non-interactive (single prompt)
-
-Add `-p` to run once and print the result without entering interactive mode:
+**Launch QoderCLI interactively:**
 
 ```bash
-clippet -c /path/to/claude-settings.json -p "你是什么模型，只回答模型名"
+clippet qodercli
+clippet qodercli -p "Explain the current codebase"
+```
+
+**Non-interactive mode** — add `-p` to run once and print the result:
+
+```bash
+clippet -c /path/to/claude-settings.json -p "What model are you?"
 clippet -c /path/to/auth.json --codex-config /path/to/config.toml -p "say hi"
+clippet qodercli -p "Analyze this function" --max-turns 25
 ```
 
-### Named environments
+---
+
+## 3. Named Environments
 
 Save a config path under a short alias so you don't have to type the full path:
 
@@ -128,39 +95,11 @@ clippet -e mycodex
 clippet env list
 ```
 
-If the saved path points to a native Claude/Codex config, CLIppet auto-detects
-the agent.  If it points to a CLIppet composite config, the same composite
-selection rules below apply.
+If the saved path points to a native Claude/Codex/Gemini config, CLIppet auto-detects the agent. If it points to a CLIppet composite config, the same composite selection rules below apply.
 
-### CLIppet composite config (advanced)
+---
 
-When you need multiple adapters with shared credential profiles, use a CLIppet
-YAML/JSON config file:
-
-```bash
-clippet -c single-adapter-config.json
-clippet -c clippet-config.json codex-default -p "review the current repository"
-```
-
-Rules:
-
-- If the composite config has exactly one adapter, CLIppet selects it automatically.
-- If the composite config has multiple adapters, pass the adapter `name` from the config file.
-- Second-home directory mode still requires an explicit trailing `claude` or `codex`.
-
-See the [Configuration](#configuration-yaml-or-json) section for the full schema.
-
-### Behavior summary
-
-| Flag | Meaning |
-|------|---------|
-| `-c <file>` | Native agent config (Claude JSON, Codex auth.json) or CLIppet composite config |
-| `--codex-config <file>` | Codex `config.toml` (model / provider). Can be combined with `-c` or used alone |
-| `-e <name>` | Resolve a saved environment alias to a config path |
-| `-p <prompt>` | Run once non-interactively; omit to launch interactive session |
-| `[agent]` | Optional native agent type or composite adapter name. Native configs and single-adapter composite configs can omit it |
-
-### Project-level `.clippet.json`
+## 4. Project-level `.clippet.json`
 
 For teams that want to run `clippet codex` or `clippet claude` directly inside a project directory without passing `-c` every time, CLIppet supports a project-level `.clippet.json` file.
 
@@ -178,6 +117,12 @@ For teams that want to run `clippet codex` or `clippet claude` directly inside a
     "codex": {
       "config_path": ".clippet.local/codex-auth.json",
       "codex_config_path": ".clippet.local/codex-config.toml"
+    },
+    "qodercli": {
+      "model": "auto"
+    },
+    "gemini": {
+      "config_path": ".clippet.local/gemini.env"
     }
   }
 }
@@ -192,6 +137,8 @@ For teams that want to run `clippet codex` or `clippet claude` directly inside a
 ```bash
 clippet codex           # Interactive Codex session
 clippet claude          # Interactive Claude session
+clippet qodercli        # Interactive QoderCLI session
+clippet gemini          # Interactive Gemini CLI session
 clippet codex -p "hi"   # Non-interactive with prompt
 ```
 
@@ -220,7 +167,107 @@ clippet -c /explicit/auth.json codex   # Uses explicit path, ignores .clippet.js
 clippet codex                           # Uses .clippet.json
 ```
 
-## Parallel Execution
+---
+
+## 5. Why CLIppet?
+
+CLI AI agents are powerful but painful to integrate programmatically:
+
+- **No standard interface** — each tool has its own flags, output formats, and execution models
+- **Black-box outputs** — extracting tool calls or intermediate state requires fragile regex or LLM-based post-processing
+- **No isolation** — running multiple agents concurrently with different credentials is error-prone
+- **No orchestration** — coordinating parallel agent execution requires custom boilerplate every time
+
+CLIppet solves all of this with a single `adapter.run(request)` call.
+
+---
+
+## 6. Features
+
+- **Unified Protocol** — consistent `run()` / `run_async()` interface across all adapters
+- **Structured Output** — tool call records, execution time, step counts — no regex hacks
+- **Sandbox Isolation** — per-run credential injection, environment variable filtering, temporary workspaces
+- **Parallel Orchestration** — `ClippetRunner` dispatches multiple agents concurrently via thread pool or asyncio
+- **Declarative Config** — YAML/JSON-based adapter registration with credential profiles
+- **Built-in Adapters** — Claude Code, Codex, QoderCLI, and Gemini CLI out of the box; extensible via `BaseSubprocessAdapter`
+
+---
+
+## 7. Installation
+
+```bash
+pip install clippet
+```
+
+For development:
+
+```bash
+pip install clippet[dev]
+```
+
+> Requires Python 3.10+
+
+---
+
+## 8. Python SDK Quick Start
+
+```python
+from clippet import ClippetRunner, AgentRequest
+from clippet.adapters import ClaudeAdapter
+
+# Initialize runner and register adapter
+runner = ClippetRunner(max_workers=4)
+runner.register("claude", ClaudeAdapter(model="sonnet"))
+
+# Create a request
+request = AgentRequest(
+    task_prompt="Find and fix the bug in src/server.py",
+    workspace_dir="/path/to/project",
+    timeout=900,
+)
+
+# Execute
+result = runner.execute("claude", request)
+
+print(f"Success: {result.is_success}")
+print(f"Time: {result.execution_time}s")
+print(f"Tools used: {[t.tool_name for t in result.tool_calls]}")
+```
+
+---
+
+## 9. Advanced CLI Usage
+
+### 9.1 CLIppet composite config (advanced)
+
+When you need multiple adapters with shared credential profiles, use a CLIppet YAML/JSON config file:
+
+```bash
+clippet -c single-adapter-config.json
+clippet -c clippet-config.json codex-default -p "review the current repository"
+```
+
+Rules:
+
+- If the composite config has exactly one adapter, CLIppet selects it automatically.
+- If the composite config has multiple adapters, pass the adapter `name` from the config file.
+- Second-home directory mode still requires an explicit trailing `claude` or `codex`.
+
+See the [Configuration](#12-configuration-yaml-or-json) section for the full schema.
+
+### 9.2 Behavior summary
+
+| Flag | Meaning |
+|------|---------|
+| `-c <file>` | Native agent config (Claude JSON, Codex auth.json, Gemini .env) or CLIppet composite config |
+| `--codex-config <file>` | Codex `config.toml` (model / provider). Can be combined with `-c` or used alone |
+| `-e <name>` | Resolve a saved environment alias to a config path |
+| `-p <prompt>` | Run once non-interactively; omit to launch interactive session |
+| `[agent]` | Optional native agent type or composite adapter name. Native configs and single-adapter composite configs can omit it |
+
+---
+
+## 10. Parallel Execution
 
 Run multiple agents on the same task simultaneously:
 
@@ -246,7 +293,9 @@ for name, result in results.items():
     print(f"{name}: {'pass' if result.is_success else 'fail'} in {result.execution_time:.1f}s")
 ```
 
-## Credential Isolation
+---
+
+## 11. Credential Isolation
 
 Run agents with different API keys without conflicts:
 
@@ -275,7 +324,9 @@ results = runner.execute_parallel({
 })
 ```
 
-## Configuration (YAML or JSON)
+---
+
+## 12. Configuration (YAML or JSON)
 
 Define adapters and credential profiles declaratively:
 
@@ -305,6 +356,20 @@ Define adapters and credential profiles declaratively:
             "options": {
                 "model": "o4-mini"
             }
+        },
+        {
+            "adapter_type": "qodercli",
+            "name": "qodercli-default",
+            "options": {
+                "model": "auto"
+            }
+        },
+        {
+            "adapter_type": "gemini",
+            "name": "gemini-default",
+            "options": {
+                "model": "gemini-3.1-pro"
+            }
         }
     ],
     "default_timeout": 900,
@@ -321,7 +386,9 @@ runner = create_runner_from_config(config)
 result = runner.execute("claude-personal", request)
 ```
 
-## How It Works
+---
+
+## 13. How It Works
 
 ```
   ┌─────────────────────────────────────────────────────────────────┐
@@ -333,12 +400,14 @@ result = runner.execute("claude-personal", request)
   │                          ▼                                      │
   │          ┌───────────────────────────────┐                      │
   │          │     Config / Auto-detection   │                      │
-  │          │  native Claude · Codex · YAML │                      │
+  │          │  Claude · Codex · QoderCLI    │                      │
+  │          │  Gemini · YAML composite      │                      │
   │          └───────────────┬───────────────┘                      │
   │                          ▼                                      │
   │     ┌────────────────────────────────────────┐                  │
   │     │              Adapter layer             │                  │
-  │     │  ClaudeAdapter · CodexAdapter · Qoder  │                  │
+  │     │  ClaudeAdapter · CodexAdapter          │                  │
+  │     │  QoderCLIAdapter · GeminiAdapter       │                  │
   │     │  build_command() · parse_output()      │                  │
   │     └────────────────────┬───────────────────┘                  │
   │                          ▼                                      │
@@ -352,7 +421,8 @@ result = runner.execute("claude-personal", request)
                              ▼
            ┌─────────────────────────────────┐
            │      CLI Agent subprocess       │
-           │  claude / codex exec / qoder    │
+           │  claude / codex / qodercli      │
+           │  gemini                         │
            └─────────────────┬───────────────┘
                              ▼
            ┌─────────────────────────────────┐
@@ -361,12 +431,14 @@ result = runner.execute("claude-personal", request)
            └─────────────────────────────────┘
 ```
 
-- **Config detection** auto-identifies file format (Claude JSON / Codex auth.json / CLIppet YAML) so you rarely need to specify the type explicitly.
+- **Config detection** auto-identifies file format (Claude JSON / Codex auth.json / Gemini .env / CLIppet YAML) so you rarely need to specify the type explicitly.
 - **Adapter layer** translates a generic `AgentRequest` into tool-specific CLI flags and parses the raw output back into a structured `AgentResult`.
 - **Sandbox** creates an isolated `$HOME` per run, injects credential files and env vars, then cleans up — your real config is never modified.
 - **ClippetRunner** wraps multiple adapters and dispatches them in parallel via a thread pool or asyncio.
 
-## Architecture
+---
+
+## 14. Architecture
 
 ```
 clippet/
@@ -379,14 +451,15 @@ clippet/
 │   ├── base.py          # BaseSubprocessAdapter
 │   ├── claude.py        # Claude Code CLI adapter
 │   ├── codex.py         # Codex CLI adapter
-│   └── qoder.py         # Qoder CLI adapter
+│   ├── qodercli.py      # QoderCLI adapter
+│   └── gemini.py        # Gemini CLI adapter
 ├── parsers/
 │   └── extractors.py    # JSON/text output parsers
 └── config/
     └── registry.py      # YAML/JSON config & adapter registration
 ```
 
-### Core Data Models
+### 14.1 Core Data Models
 
 | Model | Purpose |
 |-------|---------|
@@ -395,15 +468,16 @@ clippet/
 | `ToolCallRecord` | Tool name, parameters, timestamp |
 | `IsolationConfig` | Credential files, env overrides, whitelist/blacklist |
 
-### Built-in Adapters
+### 14.2 Built-in Adapters
 
 | Adapter | CLI Tool | Key Flags |
 |---------|----------|-----------|
 | `ClaudeAdapter` | `claude` | `--model`, `--permission-mode`, `--max-turns`, `--allowed-tools` |
 | `CodexAdapter` | `codex exec` | `--model`, `--sandbox`, `--full-auto`, `--cd`, `--add-dir` |
-| `QoderAdapter` | `qoder chat` | `--mode`, `-a` (add files), `--profile` |
+| `QoderCLIAdapter` | `qodercli` | `-p`, `--model`, `--max-turns`, `--workspace` |
+| `GeminiAdapter` | `gemini` | `--model`, config via `.env` file |
 
-### Extending with Custom Adapters
+### 14.3 Extending with Custom Adapters
 
 Subclass `BaseSubprocessAdapter` and implement two methods:
 
@@ -429,7 +503,9 @@ class MyAdapter(BaseSubprocessAdapter):
         )
 ```
 
-## Development
+---
+
+## 15. Development
 
 ```bash
 git clone https://github.com/FanBB2333/CLIppet.git
@@ -438,6 +514,8 @@ pip install -e ".[dev]"
 pytest
 ```
 
-## License
+---
+
+## 16. License
 
 MIT
