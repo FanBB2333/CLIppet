@@ -4,24 +4,7 @@ A unified Python adapter framework for orchestrating heterogeneous CLI AI agents
 
 CLIppet turns scattered, stateless CLI tools — Claude Code, Codex, QoderCLI, Gemini CLI, and others — into strongly-typed, structured-output Python objects with unified execution, isolation, and credential management.
 
-## Table of Contents
-
-1. [Quick Start — CLI Config Switching](#1-quick-start--cli-config-switching)
-2. [Launch Agents with Codex/QoderCLI](#2-launch-agents-with-codexqodercli)
-3. [Named Environments](#3-named-environments)
-4. [Project-level Configuration](#4-project-level-clippetjson)
-5. [Why CLIppet?](#5-why-clippet)
-6. [Features](#6-features)
-7. [Installation](#7-installation)
-8. [Python SDK Quick Start](#8-python-sdk-quick-start)
-9. [Advanced CLI Usage](#9-advanced-cli-usage)
-10. [Parallel Execution](#10-parallel-execution)
-11. [Credential Isolation](#11-credential-isolation)
-12. [Configuration (YAML or JSON)](#12-configuration-yaml-or-json)
-13. [How It Works](#13-how-it-works)
-14. [Architecture](#14-architecture)
-15. [Development](#15-development)
-16. [License](#16-license)
+![CLIppet overview](resources/clippet_intro.png)
 
 ---
 
