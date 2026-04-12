@@ -45,5 +45,10 @@ glm*.json
 api-*.json
 TODOs.md
 
-/samples
+# Project-level local config (may contain credentials)
+.clippet.local/
+
+# Samples directory (but allow project-level examples)
+/samples/*
+!/samples/project-level/
 

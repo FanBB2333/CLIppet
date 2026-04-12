@@ -160,6 +160,66 @@ See the [Configuration](#configuration-yaml-or-json) section for the full schema
 | `-p <prompt>` | Run once non-interactively; omit to launch interactive session |
 | `[agent]` | Optional native agent type or composite adapter name. Native configs and single-adapter composite configs can omit it |
 
+### Project-level `.clippet.json`
+
+For teams that want to run `clippet codex` or `clippet claude` directly inside a project directory without passing `-c` every time, CLIppet supports a project-level `.clippet.json` file.
+
+**Quick start:**
+
+1. Create `.clippet.json` at your project root:
+
+```json
+{
+  "version": 1,
+  "agents": {
+    "claude": {
+      "config_path": ".clippet.local/claude-settings.json"
+    },
+    "codex": {
+      "config_path": ".clippet.local/codex-auth.json",
+      "codex_config_path": ".clippet.local/codex-config.toml"
+    }
+  }
+}
+```
+
+2. Create `.clippet.local/` and add your credential files there.
+
+3. Add `.clippet.local/` to `.gitignore` (CLIppet does this automatically for new projects).
+
+4. Run:
+
+```bash
+clippet codex           # Interactive Codex session
+clippet claude          # Interactive Claude session
+clippet codex -p "hi"   # Non-interactive with prompt
+```
+
+**Security rules:**
+
+- `.clippet.json` stores only **file references**, never API keys or tokens directly.
+- `.clippet.local/` must be gitignored because it may contain machine-specific credentials.
+- Relative paths must stay inside the project root. Use absolute paths (or `~`-expanded paths like `~/.codex/auth.json`) to reference files outside the project.
+- Discovery stops at the nearest Git root — CLIppet will not pick up `.clippet.json` files from unrelated parent directories.
+
+**Path resolution:**
+
+| Path style | Behavior |
+|------------|----------|
+| `.clippet.local/auth.json` | Relative to project root (where `.clippet.json` lives) |
+| `~/.codex/auth.json` | Expanded to user home directory |
+| `/absolute/path/to/auth.json` | Used as-is |
+| `../escape.json` | **Rejected** — use absolute path instead |
+
+**Precedence:**
+
+Explicit flags always override project-level config:
+
+```bash
+clippet -c /explicit/auth.json codex   # Uses explicit path, ignores .clippet.json
+clippet codex                           # Uses .clippet.json
+```
+
 ## Parallel Execution
 
 Run multiple agents on the same task simultaneously:

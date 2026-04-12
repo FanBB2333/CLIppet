@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "agents": {
+    "claude": {
+      "config_path": ".clippet.local/claude-settings.json"
+    },
+    "codex": {
+      "config_path": ".clippet.local/codex-auth.json",
+      "codex_config_path": ".clippet.local/codex-config.toml"
+    }
+  }
+}

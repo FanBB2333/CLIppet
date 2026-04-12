@@ -14,6 +14,12 @@ from clippet.config.project import (
 )
 
 
+def test_project_level_sample_exists() -> None:
+    """Verify that the sample .clippet.json.example file exists."""
+    sample = Path("samples/project-level/.clippet.json.example")
+    assert sample.is_file(), f"Sample file not found: {sample}"
+
+
 def test_find_project_config_walks_up_to_git_root(tmp_path: Path) -> None:
     """Test that find_project_config walks up from nested dirs to find .clippet.json."""
     repo = tmp_path / "repo"
