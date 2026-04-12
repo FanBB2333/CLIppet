@@ -20,6 +20,7 @@ from clippet.config.environments import (
     list_environments,
     remove_environment,
 )
+from clippet.config.project import resolve_project_launch
 from clippet.config.registry import create_runner_from_config, load_config
 from clippet.isolation import (
     CredentialSet,
@@ -164,7 +165,8 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
 def _resolve_config_path(args: argparse.Namespace) -> str | None:
     """Resolve the requested config path from ``-c`` or ``-e``.
 
-    Returns *None* when only ``--codex-config`` is provided (without ``-c``).
+    Returns *None* when only ``--codex-config`` is provided (without ``-c``),
+    or when project-level config resolution should be attempted.
     """
 
     config_path: str | None = getattr(args, "config", None)
@@ -186,11 +188,46 @@ def _resolve_config_path(args: argparse.Namespace) -> str | None:
     if codex_config:
         return None
 
-    print(
-        "Error: Either -c/--config, -e/--env, or --codex-config must be provided.",
-        file=sys.stderr,
-    )
-    sys.exit(1)
+    # No explicit config - return None and let caller handle project-level lookup
+    return None
+
+
+def _apply_project_level_config(args: argparse.Namespace) -> bool:
+    """Apply project-level .clippet.json config to args if applicable.
+    
+    Returns True if project-level config was applied, False otherwise.
+    """
+    has_explicit_config = any([
+        getattr(args, "config", None),
+        getattr(args, "env", None),
+        getattr(args, "codex_config", None),
+    ])
+    agent_type = getattr(args, "agent_type", None)
+
+    # Only apply for native agent types without explicit config
+    if has_explicit_config or agent_type not in {"claude", "codex"}:
+        return False
+
+    try:
+        launch = resolve_project_launch(Path.cwd(), agent_type)
+    except FileNotFoundError:
+        print(
+            "Error: no explicit config was provided and no project-level .clippet.json "
+            "was found from the current directory to the Git root.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    except KeyError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    
+    # Apply resolved paths to args
+    if launch.config_path is not None:
+        args.config = launch.config_path
+    if launch.codex_config_path is not None:
+        args.codex_config = launch.codex_config_path
+    
+    return True
 
 
 def _resolve_prompt(args: argparse.Namespace) -> str | None:
@@ -441,7 +478,7 @@ def _handle_run(args: argparse.Namespace) -> None:
         codex_config = str(Path(codex_config).resolve())
 
     # --- codex-config-only shortcut (no -c) --------------------------------
-    if config_path is None:
+    if config_path is None and codex_config is not None:
         # Only reachable when --codex-config is given without -c
         prompt = _resolve_prompt(args)
         if prompt is None:
@@ -457,6 +494,14 @@ def _handle_run(args: argparse.Namespace) -> None:
             return
         _run_codex_config_only(codex_config, prompt=prompt)
         return
+
+    # --- No config path resolved - this shouldn't happen with project-level -------
+    if config_path is None:
+        print(
+            "Error: Either -c/--config, -e/--env, or --codex-config must be provided.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # 1. Detect config format
     try:
@@ -698,6 +743,14 @@ def main() -> None:
         or getattr(args, "env", None)
         or getattr(args, "codex_config", None)
     ):
+        _handle_run(args)
+        return
+
+    # Check for project-level config when only agent_type is provided
+    agent_type = getattr(args, "agent_type", None)
+    if agent_type in {"claude", "codex"}:
+        # Try to apply project-level config
+        _apply_project_level_config(args)
         _handle_run(args)
         return
 

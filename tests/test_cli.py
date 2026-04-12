@@ -394,3 +394,209 @@ class TestCliExecution:
 
         with pytest.raises(SystemExit):
             main()
+
+
+class TestProjectLevelConfig:
+    """Tests for project-level .clippet.json configuration in CLI."""
+
+    def test_project_config_launches_codex_interactively(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        """Project-level config should launch codex when invoked with 'clippet codex'."""
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        (repo / ".clippet.local").mkdir()
+        (repo / ".clippet.local" / "auth.json").write_text(
+            json.dumps({"OPENAI_API_KEY": "sk-test"}),
+            encoding="utf-8",
+        )
+        (repo / ".clippet.local" / "config.toml").write_text(
+            'model = "o4-mini"\n',
+            encoding="utf-8",
+        )
+        (repo / ".clippet.json").write_text(
+            json.dumps({
+                "version": 1,
+                "agents": {
+                    "codex": {
+                        "config_path": ".clippet.local/auth.json",
+                        "codex_config_path": ".clippet.local/config.toml",
+                    }
+                },
+            }),
+            encoding="utf-8",
+        )
+
+        monkeypatch.chdir(repo)
+        monkeypatch.setattr(sys, "argv", ["clippet", "codex"])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+        with patch("clippet.cli.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            main()
+
+        assert mock_run.called
+        assert mock_run.call_args[0][0][0] == "codex"
+
+    def test_project_config_launches_claude_interactively(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        """Project-level config should launch claude when invoked with 'clippet claude'."""
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        (repo / ".clippet.local").mkdir()
+        (repo / ".clippet.local" / "claude.json").write_text(
+            json.dumps({"env": {"ANTHROPIC_API_KEY": "sk-test"}}),
+            encoding="utf-8",
+        )
+        (repo / ".clippet.json").write_text(
+            json.dumps({
+                "version": 1,
+                "agents": {
+                    "claude": {"config_path": ".clippet.local/claude.json"}
+                },
+            }),
+            encoding="utf-8",
+        )
+
+        monkeypatch.chdir(repo)
+        monkeypatch.setattr(sys, "argv", ["clippet", "claude"])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+        with patch("clippet.cli.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            main()
+
+        assert mock_run.called
+        assert mock_run.call_args[0][0][0] == "claude"
+
+    def test_explicit_config_beats_project_config(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        """Explicit -c should override any project-level .clippet.json."""
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        # Create project config
+        (repo / ".clippet.json").write_text(
+            json.dumps({
+                "version": 1,
+                "agents": {"codex": {"config_path": "project-auth.json"}},
+            }),
+            encoding="utf-8",
+        )
+        # Create explicit config
+        explicit = tmp_path / "explicit-auth.json"
+        explicit.write_text(
+            json.dumps({"OPENAI_API_KEY": "sk-explicit"}),
+            encoding="utf-8",
+        )
+
+        monkeypatch.chdir(repo)
+        monkeypatch.setattr(sys, "argv", ["clippet", "-c", str(explicit), "codex"])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+        with (
+            patch("clippet.cli.detect_config_type", return_value="codex"),
+            patch("clippet.cli.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+            main()
+
+        assert mock_run.called
+
+    def test_project_config_missing_agent_errors(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+        capsys,
+    ) -> None:
+        """Should error when requested agent is not in .clippet.json."""
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        (repo / ".clippet.json").write_text(
+            json.dumps({
+                "version": 1,
+                "agents": {"claude": {"config_path": "claude.json"}},
+            }),
+            encoding="utf-8",
+        )
+
+        monkeypatch.chdir(repo)
+        monkeypatch.setattr(sys, "argv", ["clippet", "codex"])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+        with pytest.raises(SystemExit):
+            main()
+
+        captured = capsys.readouterr()
+        assert "codex" in captured.err.lower()
+
+    def test_missing_project_config_errors(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+        capsys,
+    ) -> None:
+        """Should error when no .clippet.json and no explicit config."""
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+
+        monkeypatch.chdir(repo)
+        monkeypatch.setattr(sys, "argv", ["clippet", "codex"])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+        with pytest.raises(SystemExit):
+            main()
+
+        captured = capsys.readouterr()
+        assert ".clippet.json" in captured.err
+
+    def test_project_config_with_prompt(
+        self,
+        tmp_path: Path,
+        monkeypatch,
+    ) -> None:
+        """Project config should work with -p prompt."""
+        repo = tmp_path / "repo"
+        (repo / ".git").mkdir(parents=True)
+        (repo / ".clippet.local").mkdir()
+        (repo / ".clippet.local" / "auth.json").write_text(
+            json.dumps({"OPENAI_API_KEY": "sk-test"}),
+            encoding="utf-8",
+        )
+        (repo / ".clippet.json").write_text(
+            json.dumps({
+                "version": 1,
+                "agents": {
+                    "codex": {"config_path": ".clippet.local/auth.json"}
+                },
+            }),
+            encoding="utf-8",
+        )
+
+        mock_adapter = MagicMock()
+        mock_adapter.run.return_value = AgentResult(
+            is_success=True,
+            raw_output="done",
+        )
+        mock_adapter.default_isolation = None
+
+        monkeypatch.chdir(repo)
+        monkeypatch.setattr(sys, "argv", ["clippet", "codex", "-p", "do stuff"])
+
+        with (
+            patch("clippet.cli.detect_config_type", return_value="codex"),
+            patch(
+                "clippet.cli.create_adapter_from_config_file",
+                return_value=mock_adapter,
+            ),
+        ):
+            main()
+
+        mock_adapter.run.assert_called_once()
