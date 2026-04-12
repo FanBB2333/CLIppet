@@ -254,6 +254,25 @@ class TestSyncCall:
         assert "chatcmpl-test" in result.raw_output
 
     @patch("clippet.adapters.api.OpenAI")
+    def test_run_passes_request_injected_skills(self, MockOpenAI):
+        mock_client = MagicMock()
+        fake = _fake_completion("OK")
+        mock_client.chat.completions.create.return_value = fake
+        MockOpenAI.return_value = mock_client
+
+        adapter = OpenAIAdapter(api_key="sk-test")
+        request = AgentRequest(
+            task_prompt="Fix it",
+            workspace_dir="/tmp",
+            injected_skills=["Use Python 3.12"],
+        )
+        adapter.run(request)
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        system_prompt = call_kwargs["messages"][0]["content"]
+        assert "Use Python 3.12" in system_prompt
+
+    @patch("clippet.adapters.api.OpenAI")
     def test_run_handles_api_error(self, MockOpenAI):
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = RuntimeError("API down")
@@ -328,6 +347,26 @@ class TestAsyncCall:
 
         assert result.is_success is True
         assert result.steps_count == 1
+
+    @pytest.mark.asyncio
+    @patch("clippet.adapters.api.AsyncOpenAI")
+    async def test_run_async_passes_request_injected_skills(self, MockAsyncOpenAI):
+        mock_client = MagicMock()
+        fake = _fake_completion("Async OK")
+        mock_client.chat.completions.create = AsyncMock(return_value=fake)
+        MockAsyncOpenAI.return_value = mock_client
+
+        adapter = OpenAIAdapter(api_key="sk-test")
+        request = AgentRequest(
+            task_prompt="Async fix",
+            workspace_dir="/tmp",
+            injected_skills=["Follow PEP8"],
+        )
+        await adapter.run_async(request)
+
+        call_kwargs = mock_client.chat.completions.create.call_args[1]
+        system_prompt = call_kwargs["messages"][0]["content"]
+        assert "Follow PEP8" in system_prompt
 
     @pytest.mark.asyncio
     @patch("clippet.adapters.api.AsyncOpenAI")

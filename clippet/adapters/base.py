@@ -14,6 +14,7 @@ import subprocess
 import time
 from typing import Any
 
+from clippet.adapters.personas import format_skill_block
 from clippet.isolation import (
     CredentialSet,
     DirectoryCopyProvider,
@@ -128,6 +129,25 @@ class BaseSubprocessAdapter(BaseAdapter):
         """
 
         return None
+
+    # -- Skill injection helpers ---------------------------------------------
+
+    @staticmethod
+    def _format_skills_text(skills: list[str]) -> str:
+        """Format a list of skill texts into a single block.
+
+        Uses the shared ``format_skill_block`` helper so that the
+        ``<skill_content>`` tag format is consistent across API and CLI
+        adapters.
+
+        Args:
+            skills: List of raw skill text strings.
+
+        Returns:
+            Formatted skill block, or ``""`` if *skills* is empty.
+        """
+
+        return format_skill_block(skills)
 
     def run(self, request: AgentRequest) -> AgentResult:
         """Execute the agent synchronously with the given request.

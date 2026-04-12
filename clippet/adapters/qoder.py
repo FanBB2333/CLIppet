@@ -45,6 +45,10 @@ class QoderAdapter(BaseSubprocessAdapter):
     def build_command(self, request: AgentRequest) -> list[str]:
         """Build the Qoder CLI command.
         
+        When ``request.injected_skills`` is non-empty, the skill texts are
+        formatted and prepended to the task prompt since the Qoder CLI does
+        not support a native system prompt injection flag.
+        
         Args:
             request: The agent request containing task and configuration.
             
@@ -53,8 +57,18 @@ class QoderAdapter(BaseSubprocessAdapter):
         """
         cmd = ["qoder", "chat"]
         
+        # Build effective prompt — prepend skills if present.
+        effective_prompt = request.task_prompt
+        if request.injected_skills:
+            skills_block = self._format_skills_text(request.injected_skills)
+            effective_prompt = (
+                skills_block
+                + "\n\n---\n\n"
+                + effective_prompt
+            )
+
         # Add the prompt as positional argument
-        cmd.append(request.task_prompt)
+        cmd.append(effective_prompt)
         
         # Add mode
         cmd.extend(["--mode", self.mode])

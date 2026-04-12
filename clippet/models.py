@@ -25,6 +25,7 @@ class AgentRequest(BaseModel):
     timeout: int = 900  # seconds
     model: str | None = None
     allowed_tools: list[str] | None = None
+    injected_skills: list[str] = Field(default_factory=list)
     extra_args: dict[str, Any] | None = None
     isolation: "IsolationConfig | None" = None
 

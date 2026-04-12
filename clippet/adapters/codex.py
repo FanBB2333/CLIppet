@@ -56,6 +56,11 @@ class CodexAdapter(BaseSubprocessAdapter):
     def build_command(self, request: AgentRequest) -> list[str]:
         """Build the Codex CLI command arguments list.
         
+        When ``request.injected_skills`` is non-empty, the skill texts are
+        formatted and prepended to the task prompt (separated by a clear
+        delimiter) since the Codex CLI does not support a native system
+        prompt injection flag.
+        
         Args:
             request: The agent request containing task and configuration.
             
@@ -108,8 +113,18 @@ class CodexAdapter(BaseSubprocessAdapter):
                     elif value is not False and value is not None:
                         cmd.extend([flag, str(value)])
 
+        # Build effective prompt — prepend skills if present.
+        effective_prompt = request.task_prompt
+        if request.injected_skills:
+            skills_block = self._format_skills_text(request.injected_skills)
+            effective_prompt = (
+                skills_block
+                + "\n\n---\n\n"
+                + effective_prompt
+            )
+
         # Prompt is a positional argument — place it last.
-        cmd.append(request.task_prompt)
+        cmd.append(effective_prompt)
 
         return cmd
 

@@ -5,12 +5,13 @@ CLIppet adapter ecosystem.  Unlike the subprocess-based adapters this one
 calls a remote API directly.
 
 Features:
-  * Skills injection — arbitrary text snippets are concatenated and prepended
-    to the system message so the model "knows" them.
+  * Skills injection — skill texts are wrapped in ``<skill_content>`` tags
+    (matching the format used by Claude Code / OpenCode) and appended to the
+    system message so the model "knows" them.
   * Streaming support — ``call_stream`` / ``call_stream_async`` yield native
     ``ChatCompletionChunk`` objects.
-  * Agent persona placeholder — the ``system_prompt_template`` parameter is
-    reserved for future use to simulate a specific coding-agent system prompt.
+  * Agent persona — the ``agent_persona`` parameter selects a persona-specific
+    base system prompt so the model behaves like a particular coding agent.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ import time
 from typing import Any, Generator, AsyncGenerator, Iterator
 
 from clippet.adapters.base import BaseAdapter
+from clippet.adapters.personas import PERSONA_PROMPTS, format_skill_block
 from clippet.models import AgentRequest, AgentResult
 
 try:
@@ -56,16 +58,18 @@ class OpenAIAdapter(BaseAdapter):
         api_key: API key.  Falls back to ``OPENAI_API_KEY`` env var.
         base_url: Optional custom base URL (for proxies / compatible APIs).
         skills: A list of skill text snippets to inject into the system
-            prompt on every call.
-        system_prompt_template: *Reserved for future use.*  When set, the
-            entire system prompt is replaced with this template.  The
-            placeholder ``{skills}`` is substituted with the concatenated
-            skill texts.
-        agent_persona: *Reserved for future use.*  A short identifier
-            (e.g. ``"claude-code"``, ``"codex"``) indicating which coding
-            agent's behaviour should be simulated.
-        default_system_prompt: Base system prompt used when
-            ``system_prompt_template`` is not set.
+            prompt on every call.  Each skill is wrapped in a
+            ``<skill_content>`` XML tag in the final prompt.
+        system_prompt_template: When set, the entire system prompt is
+            replaced with this template.  The placeholder ``{skills}``
+            is substituted with the formatted skill block.
+        agent_persona: A short identifier (e.g. ``"claude-code"``,
+            ``"codex"``, ``"opencode"``) that selects a persona-specific
+            base system prompt.  See :data:`PERSONA_PROMPTS` for the
+            available personas.  When set, ``default_system_prompt`` is
+            ignored in favour of the persona's prompt.
+        default_system_prompt: Base system prompt used when neither
+            ``system_prompt_template`` nor ``agent_persona`` is set.
         temperature: Sampling temperature.
         max_tokens: Maximum tokens in the response.
         extra_create_kwargs: Additional keyword arguments forwarded to
@@ -138,6 +142,15 @@ class OpenAIAdapter(BaseAdapter):
     ) -> str:
         """Build the full system prompt with skills injected.
 
+        Skills are wrapped in ``<skill_content name="skill_N">`` XML tags,
+        matching the format used by Claude Code and OpenCode when loading
+        skills into context.
+
+        The base system prompt is selected from (highest priority first):
+        1. ``system_prompt_template`` (with ``{skills}`` placeholder)
+        2. ``agent_persona`` (looked up in :data:`PERSONA_PROMPTS`)
+        3. ``default_system_prompt``
+
         Args:
             extra_skills: Per-request skill texts appended to the
                 adapter-level ``self.skills``.
@@ -150,15 +163,18 @@ class OpenAIAdapter(BaseAdapter):
         if extra_skills:
             all_skills.extend(extra_skills)
 
-        skills_block = ""
-        if all_skills:
-            joined = "\n\n---\n\n".join(all_skills)
-            skills_block = f"\n\n# Skills\n\n{joined}"
+        skills_block = format_skill_block(all_skills)
 
+        # --- choose base prompt ---
         if self.system_prompt_template is not None:
             return self.system_prompt_template.replace("{skills}", skills_block)
 
-        return self.default_system_prompt + skills_block
+        if self.agent_persona and self.agent_persona in PERSONA_PROMPTS:
+            base = PERSONA_PROMPTS[self.agent_persona]
+        else:
+            base = self.default_system_prompt
+
+        return base + skills_block
 
     def build_messages(
         self,
@@ -279,7 +295,10 @@ class OpenAIAdapter(BaseAdapter):
         start_time = time.monotonic()
 
         try:
-            completion = self.call(request)
+            completion = self.call(
+                request,
+                extra_skills=request.injected_skills or None,
+            )
             raw_output = completion.model_dump_json(indent=2)
 
             # Extract the assistant message text
@@ -309,7 +328,10 @@ class OpenAIAdapter(BaseAdapter):
         start_time = time.monotonic()
 
         try:
-            completion = await self.call_async(request)
+            completion = await self.call_async(
+                request,
+                extra_skills=request.injected_skills or None,
+            )
             raw_output = completion.model_dump_json(indent=2)
 
             return AgentResult(

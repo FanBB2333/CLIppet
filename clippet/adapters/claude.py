@@ -58,6 +58,12 @@ class ClaudeAdapter(BaseSubprocessAdapter):
     def build_command(self, request: AgentRequest) -> list[str]:
         """Build the Claude Code CLI command.
         
+        When ``request.injected_skills`` is non-empty the skill texts are
+        formatted (using ``<skill_content>`` tags) and merged into the
+        ``--append-system-prompt`` flag value.  If the adapter already has a
+        constructor-level ``append_system_prompt``, the skill block is
+        appended after it.
+        
         Args:
             request: The agent request containing task and configuration.
             
@@ -90,9 +96,18 @@ class ClaudeAdapter(BaseSubprocessAdapter):
         if self.max_budget_usd is not None:
             cmd.extend(["--max-budget-usd", str(self.max_budget_usd)])
         
-        # Add append system prompt if set
-        if self.append_system_prompt:
-            cmd.extend(["--append-system-prompt", self.append_system_prompt])
+        # Build the effective --append-system-prompt value by merging the
+        # adapter-level value with any per-request injected skills.
+        effective_append = self.append_system_prompt or ""
+        if request.injected_skills:
+            skills_block = self._format_skills_text(request.injected_skills)
+            if effective_append:
+                effective_append = effective_append + "\n\n" + skills_block
+            else:
+                effective_append = skills_block
+
+        if effective_append:
+            cmd.extend(["--append-system-prompt", effective_append])
         
         # Add verbose flag if enabled
         if self.verbose:

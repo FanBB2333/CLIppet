@@ -65,6 +65,7 @@ class TestAgentRequest:
         assert request.workspace_dir == Path.cwd()
         assert request.model is None
         assert request.allowed_tools is None
+        assert request.injected_skills == []
         assert request.extra_args is None
         assert request.isolation is None
 
@@ -72,6 +73,7 @@ class TestAgentRequest:
         """Test creating an AgentRequest with all fields specified."""
         workspace = Path("/tmp/workspace")
         tools = ["read_file", "write_file"]
+        skills = ["Always use type hints"]
         extra = {"verbose": True}
         isolation = IsolationConfig(
             env_overrides={"TEST_TOKEN": "abc"},
@@ -84,6 +86,7 @@ class TestAgentRequest:
             timeout=1800,
             model="gpt-4",
             allowed_tools=tools,
+            injected_skills=skills,
             extra_args=extra,
             isolation=isolation,
         )
@@ -93,6 +96,7 @@ class TestAgentRequest:
         assert request.timeout == 1800
         assert request.model == "gpt-4"
         assert request.allowed_tools == tools
+        assert request.injected_skills == skills
         assert request.extra_args == extra
         assert request.isolation == isolation
 
