@@ -16,6 +16,16 @@ from clippet.config.environments import (
     load_environments,
     remove_environment,
 )
+from clippet.config.project import (
+    PROJECT_CONFIG_FILENAME,
+    ProjectAgentConfig,
+    ProjectAgentsConfig,
+    ProjectConfig,
+    ResolvedProjectLaunch,
+    find_project_config,
+    load_project_config,
+    resolve_project_launch,
+)
 from clippet.config.registry import (
     AdapterConfig,
     ClippetConfig,
@@ -82,6 +92,15 @@ __all__ = [
     "create_adapter_from_claude_config",
     "create_adapter_from_codex_config",
     "create_adapter_with_second_home",
+    # Project-level config
+    "PROJECT_CONFIG_FILENAME",
+    "ProjectAgentConfig",
+    "ProjectAgentsConfig",
+    "ProjectConfig",
+    "ResolvedProjectLaunch",
+    "find_project_config",
+    "load_project_config",
+    "resolve_project_launch",
     # Environments
     "load_environments",
     "get_environment",

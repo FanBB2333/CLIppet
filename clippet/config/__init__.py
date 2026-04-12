@@ -7,6 +7,16 @@ from clippet.config.detector import (
     create_adapter_with_second_home,
     detect_config_type,
 )
+from clippet.config.project import (
+    PROJECT_CONFIG_FILENAME,
+    ProjectAgentConfig,
+    ProjectAgentsConfig,
+    ProjectConfig,
+    ResolvedProjectLaunch,
+    find_project_config,
+    load_project_config,
+    resolve_project_launch,
+)
 from clippet.config.registry import (
     AdapterConfig,
     ClippetConfig,
@@ -26,4 +36,13 @@ __all__ = [
     "create_runner_from_config",
     "detect_config_type",
     "load_config",
+    # Project-level config
+    "PROJECT_CONFIG_FILENAME",
+    "ProjectAgentConfig",
+    "ProjectAgentsConfig",
+    "ProjectConfig",
+    "ResolvedProjectLaunch",
+    "find_project_config",
+    "load_project_config",
+    "resolve_project_launch",
 ]
