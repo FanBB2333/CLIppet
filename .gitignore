@@ -45,6 +45,9 @@ glm*.json
 api-*.json
 TODOs.md
 
+# Internal docs
+docs/superpowers/
+
 # Project-level local config (may contain credentials)
 .clippet.local/
 
