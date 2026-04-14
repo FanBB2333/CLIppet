@@ -47,6 +47,7 @@ TODOs.md
 
 # Internal docs
 docs/superpowers/
+clippet-spec.md
 
 # Project-level local config (may contain credentials)
 .clippet.local/
@@ -54,4 +55,3 @@ docs/superpowers/
 # Samples directory (but allow project-level examples)
 /samples/*
 !/samples/project-level/
-
