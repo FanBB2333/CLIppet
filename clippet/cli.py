@@ -15,7 +15,11 @@ from clippet.config.detector import (
     detect_config_type,
 )
 from clippet.config.environments import (
+    ENV_TYPE_HOME,
     add_environment,
+    clone_home_env,
+    create_home_env,
+    entry_type,
     get_environment,
     list_environments,
     remove_environment,
@@ -51,19 +55,7 @@ class _ClippetArgumentParser:
         _add_run_arguments(run_parser)
 
         env_parser = subparsers.add_parser("env", help="Manage environment profiles")
-        env_sub = env_parser.add_subparsers(dest="env_action")
-
-        env_sub.add_parser("list", help="List registered environments")
-
-        env_add = env_sub.add_parser("add", help="Register an environment profile")
-        env_add.add_argument("name", help="Name for the environment")
-        env_add.add_argument("config_path", help="Path to the config file")
-
-        env_rm = env_sub.add_parser(
-            "remove",
-            help="Unregister an environment profile",
-        )
-        env_rm.add_argument("name", help="Name of the environment to remove")
+        _add_env_subcommands(env_parser)
 
         self._run_parser = argparse.ArgumentParser(
             prog="clippet",
@@ -75,19 +67,7 @@ class _ClippetArgumentParser:
             prog="clippet env",
             description="Manage environment profiles",
         )
-        env_sub = self._env_parser.add_subparsers(dest="env_action")
-
-        env_sub.add_parser("list", help="List registered environments")
-
-        env_add = env_sub.add_parser("add", help="Register an environment profile")
-        env_add.add_argument("name", help="Name for the environment")
-        env_add.add_argument("config_path", help="Path to the config file")
-
-        env_rm = env_sub.add_parser(
-            "remove",
-            help="Unregister an environment profile",
-        )
-        env_rm.add_argument("name", help="Name of the environment to remove")
+        _add_env_subcommands(self._env_parser)
 
     def parse_args(self, args: list[str] | None = None) -> argparse.Namespace:
         """Parse CLI arguments with support for top-level agent invocations."""
@@ -159,6 +139,85 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_env_subcommands(parser: argparse.ArgumentParser) -> None:
+    """Register the ``env`` subcommands on *parser*.
+
+    Modern (default) mode is ``create`` — a persistent HOME container under
+    ``~/.clippet/envs/<name>/`` that the agent uses directly as ``$HOME`` at
+    launch (second-home mode). Legacy ``add`` is kept for file-path aliases.
+    """
+
+    sub = parser.add_subparsers(dest="env_action")
+
+    sub.add_parser("list", help="List registered environments")
+
+    create = sub.add_parser(
+        "create",
+        help="Create a persistent HOME-container env (default mode)",
+    )
+    create.add_argument("name", help="Name for the new env")
+    create.add_argument(
+        "--from-current",
+        action="store_true",
+        help=(
+            "Seed the new env by copying the current ~/.claude, ~/.codex, "
+            "~/.gemini directories. Without this flag the env starts empty."
+        ),
+    )
+    create.add_argument(
+        "--agents",
+        default=None,
+        help=(
+            "Comma-separated list of agents to seed when --from-current is set "
+            "(e.g. 'claude,codex'). Default: seed all."
+        ),
+    )
+    create.add_argument(
+        "--description", default="", help="Optional human-readable description"
+    )
+    create.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace any existing env with the same name",
+    )
+
+    add = sub.add_parser(
+        "add",
+        help="Register a file-path alias (legacy mode)",
+    )
+    add.add_argument("name", help="Name for the environment")
+    add.add_argument("config_path", help="Path to the config file")
+
+    clone = sub.add_parser("clone", help="Clone an existing HOME-container env")
+    clone.add_argument("src", help="Source env name")
+    clone.add_argument("dst", help="New env name")
+    clone.add_argument(
+        "--description", default="", help="Optional human-readable description"
+    )
+    clone.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace the destination env if it already exists",
+    )
+
+    path_p = sub.add_parser(
+        "path",
+        help="Print the on-disk path of an env (HOME dir or config file)",
+    )
+    path_p.add_argument("name", help="Env name")
+
+    rm = sub.add_parser("remove", help="Unregister an env")
+    rm.add_argument("name", help="Name of the environment to remove")
+    rm.add_argument(
+        "--purge",
+        action="store_true",
+        help=(
+            "For HOME-container envs, also delete the directory on disk. "
+            "Without this flag, only the registry entry is removed."
+        ),
+    )
+
+
 # --- handlers ---------------------------------------------------------------
 
 
@@ -182,6 +241,16 @@ def _resolve_config_path(args: argparse.Namespace) -> str | None:
         except KeyError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
+        if entry_type(env_profile) == ENV_TYPE_HOME:
+            home_dir = env_profile.get("home_dir")
+            if not home_dir:
+                print(
+                    f"Error: env '{env_name}' is a HOME-container entry but has no "
+                    "'home_dir' field. The registry may be corrupted.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            return home_dir
         return env_profile["config_path"]
 
     # Allow --codex-config alone (no -c required)
@@ -678,6 +747,14 @@ def _print_result(result) -> None:
         sys.exit(1)
 
 
+def _entry_path(profile: dict) -> str:
+    """Return the on-disk path associated with an env entry."""
+
+    if entry_type(profile) == ENV_TYPE_HOME:
+        return profile.get("home_dir", "")
+    return profile.get("config_path", "")
+
+
 def _handle_env(args: argparse.Namespace) -> None:
     """Dispatch env subcommands."""
 
@@ -688,15 +765,38 @@ def _handle_env(args: argparse.Namespace) -> None:
         if not envs:
             print("No environments registered.")
             return
-        # Print formatted table
         name_width = max(len(n) for n in envs) + 2
-        print(f"{'Name':<{name_width}} Config Path")
-        print(f"{'-' * name_width} {'-' * 40}")
+        type_width = 6
+        print(f"{'Name':<{name_width}} {'Type':<{type_width}} Path")
+        print(f"{'-' * name_width} {'-' * type_width} {'-' * 40}")
         for name, profile in sorted(envs.items()):
-            config = profile.get("config_path", "")
-            print(f"{name:<{name_width}} {config}")
+            etype = entry_type(profile)
+            print(f"{name:<{name_width}} {etype:<{type_width}} {_entry_path(profile)}")
+        return
 
-    elif action == "add":
+    if action == "create":
+        name = args.name
+        agents = (
+            [a.strip() for a in args.agents.split(",") if a.strip()]
+            if args.agents
+            else None
+        )
+        try:
+            home_dir = create_home_env(
+                name,
+                from_current=args.from_current,
+                agents=agents,
+                description=args.description,
+                overwrite=args.overwrite,
+            )
+        except (FileExistsError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        seeded = " (seeded from current $HOME)" if args.from_current else ""
+        print(f"Environment '{name}' created at {home_dir}{seeded}.")
+        return
+
+    if action == "add":
         name = args.name
         config = args.config_path
         try:
@@ -704,20 +804,49 @@ def _handle_env(args: argparse.Namespace) -> None:
         except FileNotFoundError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
-        print(f"Environment '{name}' added.")
+        print(f"Environment '{name}' added (file alias).")
+        return
 
-    elif action == "remove":
-        name = args.name
+    if action == "clone":
         try:
-            remove_environment(name)
+            home_dir = clone_home_env(
+                args.src,
+                args.dst,
+                description=args.description,
+                overwrite=args.overwrite,
+            )
+        except (KeyError, FileNotFoundError, FileExistsError, ValueError) as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        print(f"Environment '{args.dst}' cloned from '{args.src}' at {home_dir}.")
+        return
+
+    if action == "path":
+        try:
+            profile = get_environment(args.name)
         except KeyError as exc:
             print(f"Error: {exc}", file=sys.stderr)
             sys.exit(1)
-        print(f"Environment '{name}' removed.")
+        print(_entry_path(profile))
+        return
 
-    else:
-        print("Error: specify an env action: list, add, or remove.", file=sys.stderr)
-        sys.exit(1)
+    if action == "remove":
+        name = args.name
+        purge = getattr(args, "purge", False)
+        try:
+            remove_environment(name, purge=purge)
+        except KeyError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        suffix = " (directory purged)" if purge else ""
+        print(f"Environment '{name}' removed{suffix}.")
+        return
+
+    print(
+        "Error: specify an env action: list, create, add, clone, path, or remove.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 # --- main --------------------------------------------------------------------

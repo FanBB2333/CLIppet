@@ -70,15 +70,68 @@ clippet qodercli -p "Analyze this function" --max-turns 25
 
 ## 3. Named Environments
 
-Save a config path under a short alias so you don't have to type the full path:
+CLIppet manages two kinds of named environments — both registered in `~/.clippet/environments.json` and selectable with `-e <name>`.
+
+### Quick start (for first-time users)
+
+Three commands. No flags to memorise:
+
+```bash
+clippet env create work --from-current   # 1. carve out an isolated HOME, seeded from your current ~/.claude / ~/.codex / ~/.gemini
+clippet -e work claude                   # 2. launch claude — uses ~/.clippet/envs/work/ as $HOME
+clippet -e work claude                   # 3. launch it again tomorrow — your past sessions, todos, MCP state are all still there
+```
+
+Everything the agent writes (chat history, OAuth refresh, todos, caches) lands inside `~/.clippet/envs/work/` and stays there. Want a second, fully isolated workspace? Pick a different name:
+
+```bash
+clippet env create personal              # empty — first launch will prompt you to log in
+clippet -e personal claude               # totally separate world from `work`
+```
+
+Switching between envs is just `-e <name>`. Running two envs in parallel is safe — they never see each other.
+
+> **Tip** — drop `--from-current` if you don't want to copy your existing credentials into the new env (e.g. when you plan to log in with a different account inside it).
+
+### 3.1 HOME-container envs (default, conda-style)
+
+Each env is a persistent fake `$HOME` living at `~/.clippet/envs/<name>/`. At launch, CLIppet uses the directory **directly** as `$HOME` (second-home mode), so the agent's session history, MCP state, OAuth refresh, todos, and credentials all persist across runs — and stay fully isolated between envs.
+
+```bash
+clippet env create work --from-current        # seed from current ~/.claude ~/.codex ~/.gemini
+clippet env create personal                   # start empty (you'll `claude login` later)
+clippet env create exp --from-current --agents claude    # selective seeding
+
+clippet env list                              # show all envs with type and path
+clippet env path work                         # print HOME path (handy in scripts)
+clippet env clone work scratch                # duplicate an env
+
+clippet -e work claude                        # launch claude using ~/.clippet/envs/work as $HOME
+clippet -e personal codex                     # different env, different agent — fully isolated
+clippet -e work claude &  clippet -e personal claude &   # safe to run in parallel
+```
+
+`-e <home-env>` requires an explicit agent (`claude` / `codex` / `gemini`) because the env directory can carry credentials for several agents at once.
+
+**Removing an env** — by default only the registry entry is deleted; the directory is retained so accumulated session history isn't lost by accident:
+
+```bash
+clippet env remove scratch                    # unregister, keep ~/.clippet/envs/scratch/
+clippet env remove scratch --purge            # unregister AND delete the directory
+```
+
+### 3.2 File-alias envs (legacy)
+
+A short name pointing to an existing config file. CLIppet copies that one file into a fresh temp HOME on each run — no session persistence, suitable for one-shot scripted calls.
 
 ```bash
 clippet env add mycodex /path/to/auth.json
-clippet -e mycodex
-clippet env list
+clippet -e mycodex -p "say hi"
 ```
 
-If the saved path points to a native Claude/Codex/Gemini config, CLIppet auto-detects the agent. If it points to a CLIppet composite config, the same composite selection rules below apply.
+If the path is a native Claude/Codex/Gemini config, the agent is auto-detected. If it's a CLIppet composite config, the same composite selection rules below apply.
+
+> **When to pick which** — use a HOME-container env for interactive work where you want continuity (`claude --resume` etc.). Use a file alias when you just want a shortcut to a single credential file for non-interactive runs.
 
 ---
 
@@ -244,7 +297,7 @@ See the [Configuration](#12-configuration-yaml-or-json) section for the full sch
 |------|---------|
 | `-c <file>` | Native agent config (Claude JSON, Codex auth.json, Gemini .env) or CLIppet composite config |
 | `--codex-config <file>` | Codex `config.toml` (model / provider). Can be combined with `-c` or used alone |
-| `-e <name>` | Resolve a saved environment alias to a config path |
+| `-e <name>` | Resolve a saved environment — either a HOME-container directory (default) or a file-path alias (legacy) |
 | `-p <prompt>` | Run once non-interactively; omit to launch interactive session |
 | `[agent]` | Optional native agent type or composite adapter name. Native configs and single-adapter composite configs can omit it |
 

@@ -59,6 +59,55 @@ class TestCliArgumentParsing:
         assert args.command == "env"
         assert args.env_action == "remove"
         assert args.name == "myenv"
+        assert args.purge is False
+
+    def test_env_remove_purge(self) -> None:
+        """Parse 'env remove myenv --purge'."""
+        args = self._parse(["env", "remove", "myenv", "--purge"])
+
+        assert args.env_action == "remove"
+        assert args.purge is True
+
+    def test_env_create_default(self) -> None:
+        """Parse 'env create work'."""
+        args = self._parse(["env", "create", "work"])
+
+        assert args.command == "env"
+        assert args.env_action == "create"
+        assert args.name == "work"
+        assert args.from_current is False
+        assert args.agents is None
+        assert args.overwrite is False
+
+    def test_env_create_with_flags(self) -> None:
+        """Parse 'env create work --from-current --agents claude,codex --overwrite'."""
+        args = self._parse([
+            "env", "create", "work",
+            "--from-current",
+            "--agents", "claude,codex",
+            "--overwrite",
+        ])
+
+        assert args.env_action == "create"
+        assert args.name == "work"
+        assert args.from_current is True
+        assert args.agents == "claude,codex"
+        assert args.overwrite is True
+
+    def test_env_clone(self) -> None:
+        """Parse 'env clone work scratch'."""
+        args = self._parse(["env", "clone", "work", "scratch"])
+
+        assert args.env_action == "clone"
+        assert args.src == "work"
+        assert args.dst == "scratch"
+
+    def test_env_path(self) -> None:
+        """Parse 'env path work'."""
+        args = self._parse(["env", "path", "work"])
+
+        assert args.env_action == "path"
+        assert args.name == "work"
 
     def test_composite_adapter_name(self) -> None:
         """Composite configs should accept adapter names, not just built-in types."""
