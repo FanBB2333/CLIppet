@@ -33,10 +33,14 @@ from pathlib import Path
 ENV_TYPE_HOME = "home"
 ENV_TYPE_FILE = "file"
 
-_SEED_SOURCES: dict[str, str] = {
-    "claude": ".claude",
-    "codex": ".codex",
-    "gemini": ".gemini",
+_SEED_SOURCES: dict[str, list[str]] = {
+    "claude": [".claude"],
+    "codex": [".codex"],
+    "gemini": [".gemini"],
+    # qodercli stores main state in ~/.qoder/ and AI-contribution stats
+    # (written by `qodercli commit`) in ~/.qoder-cli/. Seed both so that
+    # commit history carries over into the new env.
+    "qodercli": [".qoder", ".qoder-cli"],
 }
 
 
@@ -148,24 +152,31 @@ def add_environment(
 def _seed_from_real_home(target: Path, agents: list[str]) -> list[str]:
     """Copy selected agent config dirs from the real ``$HOME`` into *target*.
 
-    Returns the list of agent names that were actually seeded (skips those
-    whose source directory does not exist).
+    Each agent may map to one or more relative paths; sources that do not
+    exist on disk are skipped silently.
+
+    Returns the list of agent names that had **at least one** path actually
+    seeded.
     """
 
     real_home = Path.home()
     seeded: list[str] = []
     for agent in agents:
-        rel = _SEED_SOURCES.get(agent)
-        if rel is None:
+        rels = _SEED_SOURCES.get(agent)
+        if not rels:
             continue
-        src = real_home / rel
-        if not src.is_dir():
-            continue
-        dst = target / rel
-        if dst.exists():
-            shutil.rmtree(dst)
-        shutil.copytree(src, dst, symlinks=True)
-        seeded.append(agent)
+        copied_any = False
+        for rel in rels:
+            src = real_home / rel
+            if not src.is_dir():
+                continue
+            dst = target / rel
+            if dst.exists():
+                shutil.rmtree(dst)
+            shutil.copytree(src, dst, symlinks=True)
+            copied_any = True
+        if copied_any:
+            seeded.append(agent)
     return seeded
 
 
@@ -182,10 +193,11 @@ def create_home_env(
     Args:
         name: Env name. Must be a valid directory name (no ``/``, no leading dot).
         from_current: When True, copy the existing ``~/.claude/`` / ``~/.codex/``
-            / ``~/.gemini/`` directories into the new env as seeds. When False,
-            the env starts empty.
+            / ``~/.gemini/`` / ``~/.qoder/`` directories into the new env as
+            seeds. When False, the env starts empty.
         agents: Restrict seeding to a subset of agents (``"claude"``, ``"codex"``,
-            ``"gemini"``). Ignored when ``from_current`` is False. Default seeds all.
+            ``"gemini"``, ``"qodercli"``). Ignored when ``from_current`` is False.
+            Default seeds all.
         description: Optional human-readable description.
         overwrite: When True, replaces an existing env (registry + directory).
             When False (default), raises if the env already exists.

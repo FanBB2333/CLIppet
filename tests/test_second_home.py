@@ -190,6 +190,28 @@ class TestCreateAdapterWithSecondHome:
         assert adapter.default_isolation is not None
         assert adapter.default_isolation.home_dir == str(home_dir.resolve())
 
+    def test_creates_qodercli_adapter_with_second_home(self, tmp_path):
+        home_dir = tmp_path / "qoder-home"
+        home_dir.mkdir()
+        (home_dir / ".qoder").mkdir()
+
+        adapter = create_adapter_with_second_home(home_dir, "qodercli")
+        assert adapter.agent_name == "qodercli"
+        assert adapter.default_isolation is not None
+        assert adapter.default_isolation.home_dir == str(home_dir.resolve())
+        assert adapter.default_isolation.is_second_home
+
+    def test_qodercli_via_create_adapter_from_config_file(self, tmp_path):
+        home_dir = tmp_path / "qoder-home2"
+        home_dir.mkdir()
+
+        adapter = create_adapter_from_config_file(
+            str(home_dir), agent_type="qodercli",
+        )
+        assert adapter.agent_name == "qodercli"
+        assert adapter.default_isolation.is_second_home
+        assert adapter.default_isolation.home_dir == str(home_dir.resolve())
+
     def test_unknown_agent_type_raises(self, tmp_path):
         with pytest.raises(ValueError, match="not supported"):
             create_adapter_with_second_home(tmp_path, "unknown-agent")
@@ -378,3 +400,7 @@ class TestAgentConfigPaths:
     def test_opencode_paths(self):
         assert "opencode" in AGENT_CONFIG_PATHS
         assert ".config/opencode" in AGENT_CONFIG_PATHS["opencode"]
+
+    def test_qodercli_paths(self):
+        assert "qodercli" in AGENT_CONFIG_PATHS
+        assert ".qoder" in AGENT_CONFIG_PATHS["qodercli"]

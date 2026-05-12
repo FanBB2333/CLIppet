@@ -649,3 +649,62 @@ class TestProjectLevelConfig:
             main()
 
         mock_adapter.run.assert_called_once()
+
+
+class TestQoderCliInteractive:
+    """Tests for QoderCLI interactive launch wiring (env / second-home mode)."""
+
+    def test_build_interactive_command_qodercli(self) -> None:
+        """_build_interactive_command should return ['qodercli', ...] for QoderCLIAdapter."""
+        from clippet.adapters.qodercli import QoderCLIAdapter
+        from clippet.cli import _build_interactive_command
+
+        adapter = QoderCLIAdapter(model="performance", yolo=True)
+        cmd = _build_interactive_command(adapter)
+
+        assert cmd[0] == "qodercli"
+        assert "--model" in cmd and "performance" in cmd
+        assert "--yolo" in cmd
+
+    def test_run_qodercli_via_second_home_env(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`clippet -e <home-env> qodercli -p ...` should call adapter.run with HOME isolation."""
+        home_dir = tmp_path / "qoder-env"
+        home_dir.mkdir()
+        (home_dir / ".qoder").mkdir()
+
+        # Register the env so -e can find it
+        import clippet.config.environments as env_mod
+        from clippet.config.environments import create_home_env
+
+        monkeypatch.setattr(env_mod, "get_clippet_root", lambda: tmp_path / ".clippet")
+        # Recreate the env_dir under the redirected root
+        created = create_home_env("qenv")
+        # The env mod will create its own dir; copy over our .qoder marker
+        (created / ".qoder").mkdir(exist_ok=True)
+
+        mock_adapter = MagicMock()
+        mock_adapter.run.return_value = AgentResult(
+            is_success=True,
+            raw_output="hi",
+        )
+        mock_adapter.default_isolation = None
+
+        monkeypatch.setattr(
+            sys, "argv", ["clippet", "-e", "qenv", "qodercli", "-p", "say hi"]
+        )
+
+        with patch(
+            "clippet.cli.create_adapter_from_config_file",
+            return_value=mock_adapter,
+        ) as factory:
+            main()
+
+        # Factory should have been invoked with the env's HOME dir + qodercli type
+        call_args = factory.call_args
+        assert call_args.args[0] == str(created.resolve())
+        assert "qodercli" in (call_args.args + tuple(call_args.kwargs.values()))
+        mock_adapter.run.assert_called_once()

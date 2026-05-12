@@ -24,6 +24,10 @@ AGENT_CONFIG_PATHS: dict[str, list[str]] = {
     "gemini": [
         ".gemini",          # ~/.gemini/ directory (.env, settings.json, etc.)
     ],
+    "qodercli": [
+        ".qoder",           # ~/.qoder/ directory (sessions, projects, skills, etc.)
+        ".qoder-cli",       # ~/.qoder-cli/ai-stats (commit AI-contribution stats)
+    ],
     "opencode": [
         ".config/opencode", # ~/.config/opencode/ (opencode.json, .env, etc.)
     ],

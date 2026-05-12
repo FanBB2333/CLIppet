@@ -20,6 +20,7 @@ from clippet.adapters.base import BaseAdapter, BaseSubprocessAdapter
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.adapters.codex import CodexAdapter
 from clippet.adapters.gemini import GeminiAdapter, parse_gemini_env_file
+from clippet.adapters.qodercli import QoderCLIAdapter
 from clippet.models import IsolationConfig
 
 _CLAUDE_CODE_KEYS = {"effortLevel", "skipDangerousModePermissionPrompt", "permissions"}
@@ -313,11 +314,12 @@ def create_adapter_with_second_home(
 
     The directory at ``home_dir`` is used **directly** as ``$HOME``.  It
     should already contain the appropriate agent config hierarchy (e.g.
-    ``.claude/``, ``.codex/``, ``.gemini/``).
+    ``.claude/``, ``.codex/``, ``.gemini/``, ``.qoder/``).
 
     Args:
         home_dir: Path to the second-home directory.
-        agent_type: ``"claude"`` / ``"claude_code"``, ``"codex"``, or ``"gemini"``.
+        agent_type: ``"claude"`` / ``"claude_code"``, ``"codex"``, ``"gemini"``,
+            or ``"qodercli"``.
         **adapter_kwargs: Extra keyword arguments forwarded to the adapter
             constructor.
 
@@ -338,10 +340,12 @@ def create_adapter_with_second_home(
         adapter = CodexAdapter(**adapter_kwargs)
     elif agent_type == "gemini":
         adapter = GeminiAdapter(**adapter_kwargs)
+    elif agent_type == "qodercli":
+        adapter = QoderCLIAdapter(**adapter_kwargs)
     else:
         raise ValueError(
             f"Second-home mode is not supported for agent type '{agent_type}'. "
-            "Supported types: 'claude', 'codex', 'gemini'."
+            "Supported types: 'claude', 'codex', 'gemini', 'qodercli'."
         )
 
     adapter.default_isolation = isolation
@@ -404,7 +408,7 @@ def create_adapter_from_config_file(
         if agent_type is None:
             raise ValueError(
                 "agent_type is required when -c points to a directory "
-                "(second-home mode).  Specify one of: claude, codex, gemini."
+                "(second-home mode).  Specify one of: claude, codex, gemini, qodercli."
             )
         effective_type = "claude_code" if agent_type == "claude" else agent_type
         return create_adapter_with_second_home(

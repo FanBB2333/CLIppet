@@ -10,6 +10,7 @@ from pathlib import Path
 from clippet.adapters.base import BaseSubprocessAdapter
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.adapters.codex import CodexAdapter
+from clippet.adapters.qodercli import QoderCLIAdapter
 from clippet.config.detector import (
     create_adapter_from_config_file,
     detect_config_type,
@@ -401,8 +402,11 @@ def _build_interactive_command(adapter: BaseSubprocessAdapter) -> list[str]:
 
         return command
 
+    if isinstance(adapter, QoderCLIAdapter):
+        return adapter.build_interactive_command()
+
     raise ValueError(
-        "Interactive launch is only supported for Claude and Codex adapters."
+        "Interactive launch is only supported for Claude, Codex, and QoderCLI adapters."
     )
 
 
@@ -480,7 +484,7 @@ def _run_interactive(
         if not agent_type:
             print(
                 "Error: agent_type is required when -c points to a directory "
-                "(second-home mode). Specify one of: claude, codex.",
+                "(second-home mode). Specify one of: claude, codex, gemini, qodercli.",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -609,7 +613,7 @@ def _run_second_home(
     if not agent_type:
         print(
             "Error: agent_type is required when -c points to a directory "
-            "(second-home mode). Specify one of: claude, codex.",
+            "(second-home mode). Specify one of: claude, codex, gemini, qodercli.",
             file=sys.stderr,
         )
         sys.exit(1)

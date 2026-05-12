@@ -123,6 +123,75 @@ class TestHomeEnv:
         assert (home_dir / ".claude" / "settings.json").read_text() == '{"k":1}'
         assert (home_dir / ".codex" / "auth.json").exists()
 
+    def test_create_home_env_seeds_qodercli(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """--from-current also copies ~/.qoder/ as qodercli's HOME state."""
+        fake_home = tmp_path / "fake-home"
+        (fake_home / ".qoder").mkdir(parents=True)
+        (fake_home / ".qoder" / "argv.json").write_text('{"a":1}')
+        (fake_home / ".qoder" / "projects").mkdir()
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+        home_dir = create_home_env("with-qoder", from_current=True)
+
+        assert (home_dir / ".qoder" / "argv.json").read_text() == '{"a":1}'
+        assert (home_dir / ".qoder" / "projects").is_dir()
+
+    def test_create_home_env_seeded_qodercli_only(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """--agents qodercli restricts seeding to only ~/.qoder/."""
+        fake_home = tmp_path / "fake-home"
+        (fake_home / ".claude").mkdir(parents=True)
+        (fake_home / ".qoder").mkdir()
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+        home_dir = create_home_env(
+            "qoder-only", from_current=True, agents=["qodercli"]
+        )
+
+        assert (home_dir / ".qoder").exists()
+        assert not (home_dir / ".claude").exists()
+
+    def test_create_home_env_seeds_qoder_cli_stats(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """qodercli seeding covers both ~/.qoder/ and ~/.qoder-cli/."""
+        fake_home = tmp_path / "fake-home"
+        (fake_home / ".qoder").mkdir(parents=True)
+        (fake_home / ".qoder" / "argv.json").write_text("{}")
+        (fake_home / ".qoder-cli" / "ai-stats").mkdir(parents=True)
+        (fake_home / ".qoder-cli" / "ai-stats" / "verified-abc.json").write_text(
+            '{"commitId":"abc"}'
+        )
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+        home_dir = create_home_env(
+            "both", from_current=True, agents=["qodercli"]
+        )
+
+        assert (home_dir / ".qoder" / "argv.json").exists()
+        assert (
+            home_dir / ".qoder-cli" / "ai-stats" / "verified-abc.json"
+        ).read_text() == '{"commitId":"abc"}'
+
+    def test_create_home_env_qodercli_skips_missing_stats(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Missing ~/.qoder-cli/ is fine; ~/.qoder/ is still copied."""
+        fake_home = tmp_path / "fake-home"
+        (fake_home / ".qoder").mkdir(parents=True)
+        # No .qoder-cli/ on disk
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+        home_dir = create_home_env(
+            "only-main", from_current=True, agents=["qodercli"]
+        )
+
+        assert (home_dir / ".qoder").exists()
+        assert not (home_dir / ".qoder-cli").exists()
+
     def test_create_home_env_seeded_filtered(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
