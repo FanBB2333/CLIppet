@@ -10,6 +10,7 @@ from pathlib import Path
 from clippet.adapters.base import BaseSubprocessAdapter
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.adapters.codex import CodexAdapter
+from clippet.adapters.gemini import GeminiAdapter
 from clippet.adapters.qodercli import QoderCLIAdapter
 from clippet.config.detector import (
     create_adapter_from_config_file,
@@ -28,6 +29,7 @@ from clippet.config.environments import (
 from clippet.config.project import resolve_project_launch
 from clippet.config.registry import create_runner_from_config, load_config
 from clippet.isolation import (
+    AGENT_CONFIG_PATHS,
     CredentialSet,
     EnvVarCredentialProvider,
     FileCredentialProvider,
@@ -402,11 +404,14 @@ def _build_interactive_command(adapter: BaseSubprocessAdapter) -> list[str]:
 
         return command
 
+    if isinstance(adapter, GeminiAdapter):
+        return adapter.build_interactive_command()
+
     if isinstance(adapter, QoderCLIAdapter):
         return adapter.build_interactive_command()
 
     raise ValueError(
-        "Interactive launch is only supported for Claude, Codex, and QoderCLI adapters."
+        "Interactive launch is only supported for Claude, Codex, Gemini, and QoderCLI adapters."
     )
 
 
@@ -853,6 +858,311 @@ def _handle_env(args: argparse.Namespace) -> None:
     sys.exit(1)
 
 
+# --- interactive HOME picker -------------------------------------------------
+
+
+_NATIVE_AGENTS: tuple[str, ...] = ("claude", "codex", "gemini", "qodercli")
+
+
+def _make_native_adapter(agent_type: str) -> BaseSubprocessAdapter:
+    """Construct a default adapter for a native agent type."""
+
+    if agent_type == "claude":
+        return ClaudeAdapter()
+    if agent_type == "codex":
+        return CodexAdapter()
+    if agent_type == "gemini":
+        return GeminiAdapter()
+    if agent_type == "qodercli":
+        return QoderCLIAdapter()
+    raise ValueError(f"Unsupported native agent type: {agent_type!r}")
+
+
+def _launch_native_directly(agent_type: str) -> None:
+    """Spawn the native CLI binary against the user's real ``$HOME``."""
+
+    adapter = _make_native_adapter(agent_type)
+    command = _build_interactive_command(adapter)
+    _run_interactive_command(command, isolation=None, cwd=Path.cwd())
+
+
+def _maybe_apply_project_config(args: argparse.Namespace) -> bool:
+    """Soft variant of :func:`_apply_project_level_config`.
+
+    Tries to apply project-level ``.clippet.json`` when no explicit config
+    is set.  Returns *True* on success.  Unlike the strict variant, returns
+    *False* (does not exit) when no project config is found, so callers can
+    fall back to the interactive picker.
+    """
+
+    has_explicit_config = any([
+        getattr(args, "config", None),
+        getattr(args, "env", None),
+        getattr(args, "codex_config", None),
+    ])
+    agent_type = getattr(args, "agent_type", None)
+
+    if has_explicit_config or agent_type not in {"claude", "codex"}:
+        return False
+
+    try:
+        launch = resolve_project_launch(Path.cwd(), agent_type)
+    except (FileNotFoundError, KeyError):
+        return False
+
+    if launch.config_path is not None:
+        args.config = launch.config_path
+    if launch.codex_config_path is not None:
+        args.codex_config = launch.codex_config_path
+    return True
+
+
+def _picker_choices(agent_type: str) -> list[tuple[str, Path | None]]:
+    """Return the ordered choice list shown by the HOME picker.
+
+    The first entry is always ``("base", None)`` — meaning "use the real
+    ``$HOME``". Remaining entries are HOME-container envs sorted by name.
+    """
+
+    envs = list_environments()
+    home_envs = sorted(
+        (
+            (name, profile)
+            for name, profile in envs.items()
+            if entry_type(profile) == ENV_TYPE_HOME
+        ),
+        key=lambda kv: kv[0],
+    )
+    choices: list[tuple[str, Path | None]] = [("base", None)]
+    for name, profile in home_envs:
+        choices.append((name, Path(profile.get("home_dir", ""))))
+    return choices
+
+
+def _format_choice_body(
+    name: str,
+    home_path: Path | None,
+    config_paths: list[str],
+    real_home: Path,
+) -> str:
+    """Format a single choice line (without the leading marker)."""
+
+    if home_path is None:
+        return f"{name:<16}  (real $HOME — {real_home})"
+    seeded = bool(config_paths) and any(
+        (home_path / cfg).exists() for cfg in config_paths
+    )
+    tag = "[seeded]" if seeded else "        "
+    return f"{name:<16}  {tag}  {home_path}"
+
+
+def _can_use_arrow_picker() -> bool:
+    """Return True when arrow-key navigation can be used safely.
+
+    Requires POSIX, both stdin and stdout being real TTYs, and an importable
+    ``termios`` module that can read the current terminal attributes.
+    """
+
+    if sys.platform == "win32":
+        return False
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        return False
+    try:
+        import termios  # noqa: F401
+
+        termios.tcgetattr(sys.stdin.fileno())
+    except (ImportError, OSError, ValueError):
+        return False
+    return True
+
+
+def _arrow_home_picker(
+    agent_type: str,
+    choices: list[tuple[str, Path | None]],
+    config_paths: list[str],
+    real_home: Path,
+) -> tuple[str, Path | None] | None:
+    """Render an arrow-key navigable picker.
+
+    Controls:
+      * ↑/↓: move selection
+      * Enter: confirm
+      * 1-9: jump to that entry and confirm
+      * q / Ctrl-C: cancel
+    """
+
+    import termios
+    import tty
+
+    n = len(choices)
+    bodies = [
+        _format_choice_body(name, home, config_paths, real_home)
+        for name, home in choices
+    ]
+
+    sys.stderr.write(
+        f"clippet {agent_type} — select HOME  "
+        "(↑/↓ to move, Enter to confirm, digit to jump, 'q' to quit):\n"
+    )
+    sys.stderr.flush()
+
+    selected = 0
+
+    def _draw(initial: bool) -> None:
+        if not initial:
+            sys.stderr.write(f"\x1b[{n}A")  # cursor up n lines
+        for i, body in enumerate(bodies):
+            marker = "> " if i == selected else "  "
+            sys.stderr.write(f"\x1b[2K\r{marker}{body}\n")
+        sys.stderr.flush()
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setcbreak(fd)
+        _draw(initial=True)
+        while True:
+            ch = sys.stdin.read(1)
+            if ch == "\x03":  # Ctrl-C
+                return None
+            if ch in ("q", "Q"):
+                return None
+            if ch in ("\r", "\n"):
+                return choices[selected]
+            if ch.isdigit() and ch != "0":
+                idx = int(ch)
+                if 1 <= idx <= n:
+                    selected = idx - 1
+                    _draw(initial=False)
+                    return choices[selected]
+                continue
+            if ch == "\x1b":
+                next1 = sys.stdin.read(1)
+                # Accept both "ESC [ X" (xterm) and "ESC O X" (vt100/PuTTY)
+                if next1 not in ("[", "O"):
+                    continue
+                next2 = sys.stdin.read(1)
+                if next2 == "A":  # up
+                    selected = (selected - 1) % n
+                    _draw(initial=False)
+                elif next2 == "B":  # down
+                    selected = (selected + 1) % n
+                    _draw(initial=False)
+                # ignore left/right and other sequences
+    except KeyboardInterrupt:
+        return None
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+
+def _numeric_home_picker(
+    agent_type: str,
+    choices: list[tuple[str, Path | None]],
+    config_paths: list[str],
+    real_home: Path,
+) -> tuple[str, Path | None] | None:
+    """Fallback picker that reads a numeric choice via :func:`input`."""
+
+    print(f"clippet {agent_type} — select HOME:", file=sys.stderr)
+    for idx, (name, home_path) in enumerate(choices, start=1):
+        body = _format_choice_body(name, home_path, config_paths, real_home)
+        print(f"  [{idx}] {body}", file=sys.stderr)
+    print("  [q] quit", file=sys.stderr)
+
+    while True:
+        try:
+            raw = input("Choice [1]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print(file=sys.stderr)
+            return None
+
+        if raw in ("", "1"):
+            return choices[0]
+        if raw in ("q", "quit", "exit"):
+            return None
+
+        try:
+            idx = int(raw)
+        except ValueError:
+            print(
+                f"Invalid choice: {raw!r}. Enter a number 1-{len(choices)}, or 'q' to quit.",
+                file=sys.stderr,
+            )
+            continue
+
+        if 1 <= idx <= len(choices):
+            return choices[idx - 1]
+        print(
+            f"Choice out of range: {idx} (valid: 1-{len(choices)})",
+            file=sys.stderr,
+        )
+
+
+def _interactive_home_picker(agent_type: str) -> tuple[str, Path | None] | None:
+    """Prompt the user to pick a HOME for the requested agent.
+
+    Lists ``base`` (the real ``$HOME``) plus every registered HOME-container
+    env, tagging those that already contain seeded config for *agent_type*.
+
+    Uses an arrow-key navigable interface when stdin/stderr are real TTYs;
+    otherwise falls back to a numeric ``input()`` prompt.
+
+    Returns:
+        A ``(name, home_path)`` tuple where ``home_path`` is *None* for base
+        (meaning "use the real ``$HOME``"), or *None* when the user cancels.
+    """
+
+    choices = _picker_choices(agent_type)
+    config_paths = AGENT_CONFIG_PATHS.get(agent_type, [])
+    real_home = Path.home()
+
+    if _can_use_arrow_picker():
+        return _arrow_home_picker(agent_type, choices, config_paths, real_home)
+    return _numeric_home_picker(agent_type, choices, config_paths, real_home)
+
+
+def _run_native_with_picker(args: argparse.Namespace) -> None:
+    """Resolve the HOME for a bare ``clippet <agent>`` invocation.
+
+    1. Try project-level ``.clippet.json`` (claude/codex only).
+    2. If a TTY and no ``-p`` prompt, show the interactive HOME picker.
+    3. Otherwise, fall back to the user's real ``$HOME``.
+    """
+
+    agent_type: str = args.agent_type
+    prompt: str | None = getattr(args, "prompt", None)
+
+    if _maybe_apply_project_config(args):
+        _handle_run(args)
+        return
+
+    if prompt is None and sys.stdin.isatty():
+        choice = _interactive_home_picker(agent_type)
+        if choice is None:
+            sys.exit(0)
+        name, home_path = choice
+        if home_path is None:
+            _launch_native_directly(agent_type)
+            return
+        args.env = name
+        _handle_run(args)
+        return
+
+    # Non-interactive (piped, or -p given) without env/config: use real $HOME
+    if prompt is None:
+        _launch_native_directly(agent_type)
+        return
+
+    adapter = _make_native_adapter(agent_type)
+    request = AgentRequest(task_prompt=prompt)
+    try:
+        result = adapter.run(request)
+    except Exception as exc:
+        print(f"Error executing agent: {exc}", file=sys.stderr)
+        sys.exit(1)
+    _print_result(result)
+
+
 # --- main --------------------------------------------------------------------
 
 
@@ -879,12 +1189,11 @@ def main() -> None:
         _handle_run(args)
         return
 
-    # Check for project-level config when only agent_type is provided
+    # Bare ``clippet <agent>`` invocation — try project-level config, then
+    # offer an interactive HOME picker, and finally fall back to real $HOME.
     agent_type = getattr(args, "agent_type", None)
-    if agent_type in {"claude", "codex"}:
-        # Try to apply project-level config
-        _apply_project_level_config(args)
-        _handle_run(args)
+    if agent_type in _NATIVE_AGENTS:
+        _run_native_with_picker(args)
         return
 
     # Nothing useful provided – show help.

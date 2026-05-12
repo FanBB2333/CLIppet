@@ -559,13 +559,13 @@ class TestProjectLevelConfig:
 
         assert mock_run.called
 
-    def test_project_config_missing_agent_errors(
+    def test_project_config_missing_agent_falls_back_to_picker(
         self,
         tmp_path: Path,
         monkeypatch,
         capsys,
     ) -> None:
-        """Should error when requested agent is not in .clippet.json."""
+        """When the requested agent is absent from .clippet.json, fall back to the HOME picker."""
         repo = tmp_path / "repo"
         (repo / ".git").mkdir(parents=True)
         (repo / ".clippet.json").write_text(
@@ -579,32 +579,42 @@ class TestProjectLevelConfig:
         monkeypatch.chdir(repo)
         monkeypatch.setattr(sys, "argv", ["clippet", "codex"])
         monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+        # Picker -> pick "base" (real $HOME)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "1")
 
-        with pytest.raises(SystemExit):
+        with patch("clippet.cli.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
             main()
 
+        assert mock_run.called
+        assert mock_run.call_args[0][0][0] == "codex"
         captured = capsys.readouterr()
-        assert "codex" in captured.err.lower()
+        assert "select HOME" in captured.err
 
-    def test_missing_project_config_errors(
+    def test_missing_project_config_falls_back_to_picker(
         self,
         tmp_path: Path,
         monkeypatch,
         capsys,
     ) -> None:
-        """Should error when no .clippet.json and no explicit config."""
+        """When no .clippet.json exists and stdin is a TTY, the picker is shown."""
         repo = tmp_path / "repo"
         (repo / ".git").mkdir(parents=True)
 
         monkeypatch.chdir(repo)
         monkeypatch.setattr(sys, "argv", ["clippet", "codex"])
         monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+        # Pick base
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "")
 
-        with pytest.raises(SystemExit):
+        with patch("clippet.cli.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
             main()
 
+        assert mock_run.called
+        assert mock_run.call_args[0][0][0] == "codex"
         captured = capsys.readouterr()
-        assert ".clippet.json" in captured.err
+        assert "base" in captured.err
 
     def test_project_config_with_prompt(
         self,
@@ -708,3 +718,229 @@ class TestQoderCliInteractive:
         assert call_args.args[0] == str(created.resolve())
         assert "qodercli" in (call_args.args + tuple(call_args.kwargs.values()))
         mock_adapter.run.assert_called_once()
+
+
+class TestInteractiveHomePicker:
+    """Tests for the bare ``clippet <agent>`` HOME picker flow."""
+
+    def _setup_envs(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, names: list[str]
+    ) -> dict[str, Path]:
+        """Register HOME-container envs in an isolated clippet root."""
+        import clippet.config.environments as env_mod
+        from clippet.config.environments import create_home_env
+
+        clippet_root = tmp_path / ".clippet"
+        monkeypatch.setattr(env_mod, "get_clippet_root", lambda: clippet_root)
+        return {name: create_home_env(name) for name in names}
+
+    def test_picker_default_input_picks_base(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys,
+    ) -> None:
+        """Empty input (Enter) defaults to base — real $HOME, no isolation."""
+        self._setup_envs(tmp_path, monkeypatch, ["work", "personal"])
+
+        monkeypatch.setattr(sys, "argv", ["clippet", "qodercli"])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "")
+
+        with patch("clippet.cli.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            main()
+
+        assert mock_run.called
+        assert mock_run.call_args[0][0][0] == "qodercli"
+        # No env passed → subprocess inherits real env (env kwarg is absent or default)
+        captured = capsys.readouterr()
+        assert "base" in captured.err
+        assert "work" in captured.err
+        assert "personal" in captured.err
+
+    def test_picker_picks_named_env(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Picking '2' selects the first listed env and routes through -e."""
+        envs = self._setup_envs(tmp_path, monkeypatch, ["work", "personal"])
+        # Sort key matches picker (alpha) → "personal" comes before "work"
+        first_env_name = sorted(envs.keys())[0]
+        first_env_home = envs[first_env_name]
+
+        monkeypatch.setattr(sys, "argv", ["clippet", "qodercli"])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "2")
+
+        with patch("clippet.cli.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            main()
+
+        assert mock_run.called
+        # The subprocess env should have HOME pointing at the selected env's home dir
+        env_kwarg = mock_run.call_args.kwargs.get("env") or {}
+        assert env_kwarg.get("HOME") == str(first_env_home.resolve())
+
+    def test_picker_quit_exits_cleanly(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Entering 'q' should exit with code 0 without launching anything."""
+        self._setup_envs(tmp_path, monkeypatch, ["work"])
+
+        monkeypatch.setattr(sys, "argv", ["clippet", "qodercli"])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "q")
+
+        with patch("clippet.cli.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+
+        assert exc_info.value.code == 0
+        assert not mock_run.called
+
+    def test_picker_skipped_when_prompt_provided(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """`clippet qodercli -p ...` should bypass the picker and use real $HOME."""
+        self._setup_envs(tmp_path, monkeypatch, ["work"])
+
+        mock_adapter = MagicMock()
+        mock_adapter.run.return_value = AgentResult(
+            is_success=True,
+            raw_output="ok",
+        )
+        mock_adapter.default_isolation = None
+
+        monkeypatch.setattr(
+            sys, "argv", ["clippet", "qodercli", "-p", "say hi"]
+        )
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+        called_input = []
+        monkeypatch.setattr(
+            "builtins.input", lambda _p="": called_input.append(1) or ""
+        )
+
+        with patch(
+            "clippet.cli._make_native_adapter", return_value=mock_adapter
+        ):
+            main()
+
+        assert called_input == []  # picker NOT shown
+        mock_adapter.run.assert_called_once()
+
+    def test_picker_skipped_when_stdin_not_tty(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Non-TTY (piped) invocation must not block on the picker."""
+        self._setup_envs(tmp_path, monkeypatch, ["work"])
+
+        monkeypatch.setattr(sys, "argv", ["clippet", "qodercli"])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+
+        called_input = []
+        monkeypatch.setattr(
+            "builtins.input", lambda _p="": called_input.append(1) or ""
+        )
+
+        with patch("clippet.cli.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            main()
+
+        assert called_input == []
+        assert mock_run.called  # launched directly
+
+    def test_picker_invalid_then_valid(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys,
+    ) -> None:
+        """Invalid input keeps prompting until a valid choice is entered."""
+        self._setup_envs(tmp_path, monkeypatch, ["work"])
+
+        replies = iter(["abc", "9", "1"])
+        monkeypatch.setattr(sys, "argv", ["clippet", "qodercli"])
+        monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+        monkeypatch.setattr("builtins.input", lambda _p="": next(replies))
+
+        with patch("clippet.cli.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            main()
+
+        captured = capsys.readouterr()
+        assert "Invalid choice" in captured.err
+        assert "out of range" in captured.err
+        assert mock_run.called
+
+    def test_can_use_arrow_picker_false_under_pytest(self) -> None:
+        """Pytest captures stdout/stderr so the arrow picker must not engage."""
+        from clippet.cli import _can_use_arrow_picker
+
+        # Even though we don't monkeypatch isatty, pytest's capture makes
+        # stderr/stdin non-TTY so this should be False — guarantees the
+        # numeric fallback is used in CI/test runs.
+        assert _can_use_arrow_picker() is False
+
+    def test_dispatcher_routes_to_arrow_when_available(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When _can_use_arrow_picker is True, the arrow picker is invoked."""
+        self._setup_envs(tmp_path, monkeypatch, ["work"])
+
+        from clippet.cli import _interactive_home_picker
+
+        sentinel = ("base", None)
+        monkeypatch.setattr("clippet.cli._can_use_arrow_picker", lambda: True)
+        called = {}
+
+        def _fake_arrow(agent_type, choices, paths, real_home):
+            called["agent"] = agent_type
+            called["n"] = len(choices)
+            return sentinel
+
+        monkeypatch.setattr("clippet.cli._arrow_home_picker", _fake_arrow)
+
+        result = _interactive_home_picker("qodercli")
+        assert result is sentinel
+        assert called["agent"] == "qodercli"
+        # base + 1 env = 2 choices
+        assert called["n"] == 2
+
+    def test_dispatcher_falls_back_to_numeric(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """When arrow picker is unavailable, numeric picker is used."""
+        self._setup_envs(tmp_path, monkeypatch, ["work"])
+
+        from clippet.cli import _interactive_home_picker
+
+        monkeypatch.setattr("clippet.cli._can_use_arrow_picker", lambda: False)
+        called = {"arrow": 0, "numeric": 0}
+
+        monkeypatch.setattr(
+            "clippet.cli._arrow_home_picker",
+            lambda *a, **kw: called.__setitem__("arrow", called["arrow"] + 1),
+        )
+        monkeypatch.setattr(
+            "clippet.cli._numeric_home_picker",
+            lambda *a, **kw: (called.__setitem__("numeric", called["numeric"] + 1)
+                              or ("base", None)),
+        )
+
+        result = _interactive_home_picker("qodercli")
+        assert called == {"arrow": 0, "numeric": 1}
+        assert result == ("base", None)
