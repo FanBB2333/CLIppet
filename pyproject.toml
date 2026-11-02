@@ -25,13 +25,14 @@ dependencies = [
 
 [project.optional-dependencies]
 api = ["openai>=1.0"]
+cockpit = ["cryptography>=41"]
 dev = [
   "build>=1.2.2",
   "pytest>=7.0",
   "pytest-asyncio>=0.21",
   "twine>=5.1.1",
 ]
-all = ["clippet[api,dev]"]
+all = ["clippet[api,cockpit,dev]"]
 
 [project.urls]
 Homepage = "https://github.com/FanBB2333/CLIppet"
