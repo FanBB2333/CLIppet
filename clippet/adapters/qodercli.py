@@ -4,7 +4,7 @@ QoderCLI is a terminal-based AI assistant that provides an interactive chat
 interface with AI capabilities, code analysis, and MCP integration.
 """
 
-from clippet.adapters.base import BaseSubprocessAdapter
+from clippet.adapters.base import BaseSubprocessAdapter, render_extra_args
 from clippet.models import AgentRequest, AgentResult
 from clippet.parsers.extractors import parse_qoder_output
 
@@ -15,6 +15,8 @@ class QoderCLIAdapter(BaseSubprocessAdapter):
     QoderCLI is invoked via `qodercli [options]` for interactive mode,
     or `qodercli -p [prompt]` for non-interactive mode.
     """
+
+    isolation_agent = "qodercli"
 
     def __init__(
         self,
@@ -119,23 +121,27 @@ class QoderCLIAdapter(BaseSubprocessAdapter):
             cmd.append("--with-claude-config")
         
         # Add extra args from request
-        if request.extra_args:
-            for key, value in request.extra_args.items():
-                cmd.append(f"--{key}")
-                if value is not None and value is not True:
-                    cmd.append(str(value))
-        
+        cmd.extend(render_extra_args(request.extra_args))
+        cmd.extend(request.extra_cli_args)
+
         return cmd
 
-    def build_interactive_command(self, request: AgentRequest | None = None) -> list[str]:
+    def build_interactive_command(
+        self,
+        extra_args: list[str] | AgentRequest | None = None,
+        request: AgentRequest | None = None,
+    ) -> list[str]:
         """Build the QoderCLI command for interactive mode.
-        
+
         Args:
+            extra_args: Arguments appended verbatim (passthrough).
             request: Optional agent request for configuration.
-            
+
         Returns:
             List of command arguments to execute in interactive mode.
         """
+        if isinstance(extra_args, AgentRequest):  # backwards-compatible call
+            request, extra_args = extra_args, None
         cmd = ["qodercli"]
         
         # Model selection
@@ -166,7 +172,8 @@ class QoderCLIAdapter(BaseSubprocessAdapter):
         # Load claude code configurations
         if self.with_claude_config:
             cmd.append("--with-claude-config")
-        
+
+        cmd.extend(extra_args or [])
         return cmd
 
     def get_stdin_input(self, request: AgentRequest) -> str | None:
@@ -206,13 +213,17 @@ class QoderCLIAdapter(BaseSubprocessAdapter):
                 error_message = stderr.strip()
             elif parsed["is_error"]:
                 error_message = parsed.get("result_text", "Unknown error")
-        
+            else:
+                error_message = f"qodercli exited with code {return_code}"
+
+        result_text = parsed.get("result_text")
         return AgentResult(
             raw_output=raw_output,
             is_success=is_success,
             tool_calls=[],  # QoderCLI doesn't provide structured tool call output
             steps_count=0,
             error_message=error_message,
+            output_text=result_text if is_success and isinstance(result_text, str) else None,
         )
 
 

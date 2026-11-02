@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from clippet.adapters.base import BaseSubprocessAdapter
+from clippet.adapters.base import BaseSubprocessAdapter, render_extra_args
 from clippet.models import AgentRequest, AgentResult
 
 
@@ -24,6 +24,8 @@ class GeminiAdapter(BaseSubprocessAdapter):
     - GEMINI_API_KEY: API key for authentication
     - GEMINI_MODEL: Default model to use
     """
+
+    isolation_agent = "gemini"
 
     def __init__(
         self,
@@ -117,34 +119,38 @@ class GeminiAdapter(BaseSubprocessAdapter):
             for directory in self.include_directories:
                 cmd.extend(["--include-directories", directory])
         elif request.workspace_dir:
-            cmd.extend(["--include-directories", request.workspace_dir])
-        
+            cmd.extend(["--include-directories", str(request.workspace_dir)])
+
         # Output format for non-interactive mode
         if self.output_format and self.output_format != "text":
             cmd.extend(["-o", self.output_format])
-        
+
+        # Extra flags go before the positional prompt
+        cmd.extend(render_extra_args(request.extra_args))
+        cmd.extend(request.extra_cli_args)
+
         # Add the prompt as positional argument (Gemini prefers positional over -p)
         if effective_prompt:
             cmd.append(effective_prompt)
-        
-        # Add extra args from request
-        if request.extra_args:
-            for key, value in request.extra_args.items():
-                cmd.append(f"--{key}")
-                if value is not None and value is not True:
-                    cmd.append(str(value))
-        
+
         return cmd
 
-    def build_interactive_command(self, request: AgentRequest | None = None) -> list[str]:
+    def build_interactive_command(
+        self,
+        extra_args: list[str] | AgentRequest | None = None,
+        request: AgentRequest | None = None,
+    ) -> list[str]:
         """Build the Gemini CLI command for interactive mode.
-        
+
         Args:
+            extra_args: Arguments appended verbatim (passthrough).
             request: Optional agent request for configuration.
-            
+
         Returns:
             List of command arguments to execute in interactive mode.
         """
+        if isinstance(extra_args, AgentRequest):  # backwards-compatible call
+            request, extra_args = extra_args, None
         cmd = ["gemini"]
         
         # Model selection
@@ -178,8 +184,9 @@ class GeminiAdapter(BaseSubprocessAdapter):
             for directory in self.include_directories:
                 cmd.extend(["--include-directories", directory])
         elif request and request.workspace_dir:
-            cmd.extend(["--include-directories", request.workspace_dir])
-        
+            cmd.extend(["--include-directories", str(request.workspace_dir)])
+
+        cmd.extend(extra_args or [])
         return cmd
 
     def get_stdin_input(self, request: AgentRequest) -> str | None:
@@ -215,15 +222,16 @@ class GeminiAdapter(BaseSubprocessAdapter):
         if not is_success:
             if stderr and stderr.strip():
                 error_message = stderr.strip()
-            elif not raw_output.strip():
+            else:
                 error_message = f"Gemini CLI exited with code {return_code}"
-        
+
         return AgentResult(
             raw_output=raw_output,
             is_success=is_success,
             tool_calls=[],  # Gemini doesn't provide structured tool call output by default
             steps_count=0,
             error_message=error_message,
+            output_text=raw_output.strip() if is_success else None,
         )
 
 

@@ -301,18 +301,15 @@ class OpenAIAdapter(BaseAdapter):
             )
             raw_output = completion.model_dump_json(indent=2)
 
-            # Extract the assistant message text
-            text = ""
-            if completion.choices:
-                message = completion.choices[0].message
-                if message and message.content:
-                    text = message.content
+            text = _message_text(completion)
 
             return AgentResult(
                 raw_output=raw_output,
                 is_success=True,
                 execution_time=time.monotonic() - start_time,
                 steps_count=1,
+                output_text=text,
+                usage=_usage_dict(completion),
             )
         except Exception as e:
             return AgentResult(
@@ -339,6 +336,8 @@ class OpenAIAdapter(BaseAdapter):
                 is_success=True,
                 execution_time=time.monotonic() - start_time,
                 steps_count=1,
+                output_text=_message_text(completion),
+                usage=_usage_dict(completion),
             )
         except Exception as e:
             return AgentResult(
@@ -347,3 +346,27 @@ class OpenAIAdapter(BaseAdapter):
                 execution_time=time.monotonic() - start_time,
                 error_message=f"OpenAI API call failed: {e}",
             )
+
+
+def _message_text(completion: Any) -> str:
+    """Return the first choice's assistant text ("" when absent)."""
+
+    choices = getattr(completion, "choices", None) or []
+    if choices:
+        message = getattr(choices[0], "message", None)
+        content = getattr(message, "content", None)
+        if isinstance(content, str):
+            return content
+    return ""
+
+
+def _usage_dict(completion: Any) -> dict[str, Any] | None:
+    usage = getattr(completion, "usage", None)
+    if usage is None:
+        return None
+    dump = getattr(usage, "model_dump", None)
+    try:
+        data = dump() if callable(dump) else dict(usage)
+    except Exception:  # pragma: no cover - defensive
+        return None
+    return data if isinstance(data, dict) else None

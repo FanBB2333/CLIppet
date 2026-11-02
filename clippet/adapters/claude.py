@@ -1,8 +1,10 @@
 """Claude Code CLI adapter for CLIppet."""
 
+from __future__ import annotations
+
 import json
 
-from clippet.adapters.base import BaseSubprocessAdapter
+from clippet.adapters.base import BaseSubprocessAdapter, render_extra_args
 from clippet.models import AgentRequest, AgentResult
 from clippet.parsers.extractors import (
     parse_claude_json_output,
@@ -17,10 +19,15 @@ class ClaudeAdapter(BaseSubprocessAdapter):
     and parsing JSON output format.
     """
 
+    isolation_agent = "claude"
+
+    #: Permission mode used for headless (``-p``) runs when none is configured.
+    HEADLESS_PERMISSION_MODE = "bypassPermissions"
+
     def __init__(
         self,
-        model: str = "sonnet",
-        permission_mode: str = "bypassPermissions",
+        model: str | None = None,
+        permission_mode: str | None = None,
         max_turns: int | None = None,
         allowed_tools: list[str] | None = None,
         disallowed_tools: list[str] | None = None,
@@ -31,8 +38,13 @@ class ClaudeAdapter(BaseSubprocessAdapter):
         """Initialize the Claude Code adapter.
         
         Args:
-            model: Model to use (e.g. sonnet, opus, claude-sonnet-4-6).
-            permission_mode: Permission mode (default, acceptEdits, bypassPermissions, plan, auto).
+            model: Model to use (e.g. sonnet, opus, claude-sonnet-4-6).  *None*
+                (the default) lets Claude Code use the model configured in the
+                active HOME (``settings.json`` / ``ANTHROPIC_MODEL``).
+            permission_mode: Permission mode (default, acceptEdits,
+                bypassPermissions, plan, auto).  *None* means
+                ``bypassPermissions`` for headless runs and Claude Code's own
+                default for interactive sessions.
             max_turns: Maximum conversation turns in non-interactive mode.
             allowed_tools: List of allowed tools (space or comma separated when passed to CLI).
             disallowed_tools: List of disallowed tools.
@@ -75,10 +87,14 @@ class ClaudeAdapter(BaseSubprocessAdapter):
         
         # Add model (request.model overrides self.model if set)
         effective_model = request.model if request.model else self.model
-        cmd.extend(["--model", effective_model])
-        
-        # Add permission mode
-        cmd.extend(["--permission-mode", self.permission_mode])
+        if effective_model:
+            cmd.extend(["--model", effective_model])
+
+        # Add permission mode (headless runs cannot answer permission prompts)
+        cmd.extend([
+            "--permission-mode",
+            self.permission_mode or self.HEADLESS_PERMISSION_MODE,
+        ])
         
         # Add max turns if set
         if self.max_turns is not None:
@@ -114,11 +130,32 @@ class ClaudeAdapter(BaseSubprocessAdapter):
             cmd.append("--verbose")
         
         # Add any extra args from request
-        if request.extra_args:
-            for key, value in request.extra_args.items():
-                cmd.extend([f"--{key}", str(value)])
-        
+        cmd.extend(render_extra_args(request.extra_args))
+        cmd.extend(request.extra_cli_args)
+
         return cmd
+
+    def build_interactive_command(self, extra_args: list[str] | None = None) -> list[str]:
+        """Build the interactive ``claude`` command.
+
+        Only explicitly configured options are emitted; ``extra_args`` are
+        appended verbatim (e.g. ``--resume``, ``--continue``).
+        """
+        command = ["claude"]
+        if self.model:
+            command.extend(["--model", self.model])
+        if self.permission_mode:
+            command.extend(["--permission-mode", self.permission_mode])
+        if self.allowed_tools:
+            command.extend(["--allowed-tools", ",".join(self.allowed_tools)])
+        if self.disallowed_tools:
+            command.extend(["--disallowed-tools", ",".join(self.disallowed_tools)])
+        if self.append_system_prompt:
+            command.extend(["--append-system-prompt", self.append_system_prompt])
+        if self.verbose:
+            command.append("--verbose")
+        command.extend(extra_args or [])
+        return command
 
     def get_stdin_input(self, request: AgentRequest) -> str | None:
         """Return the prompt to send via stdin.
@@ -160,14 +197,27 @@ class ClaudeAdapter(BaseSubprocessAdapter):
         
         # Determine success
         is_success = not parsed["is_error"] and return_code == 0
-        
+
         # Build error message if not successful
-        error_message = stderr if not is_success and stderr else None
-        
+        error_message: str | None = None
+        if not is_success:
+            if stderr and stderr.strip():
+                error_message = stderr.strip()
+            elif parsed["result_text"]:
+                error_message = str(parsed["result_text"])
+            else:
+                error_message = f"claude exited with code {return_code}"
+
+        usage = full_data.get("usage") if isinstance(full_data, dict) else None
+        result_text = parsed["result_text"]
+
         return AgentResult(
             raw_output=raw_output,
             is_success=is_success,
             tool_calls=tool_calls,
             steps_count=parsed["num_turns"] or 0,
             error_message=error_message,
+            output_text=result_text if isinstance(result_text, str) and is_success else None,
+            usage=usage if isinstance(usage, dict) else None,
+            session_id=parsed.get("session_id"),
         )

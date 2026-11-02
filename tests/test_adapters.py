@@ -39,12 +39,10 @@ class TestClaudeAdapter:
         assert "--output-format" in cmd
         assert "json" in cmd
         
-        # Check default model
-        assert "--model" in cmd
-        model_idx = cmd.index("--model")
-        assert cmd[model_idx + 1] == "sonnet"
-        
-        # Check default permission mode
+        # No model by default: Claude Code uses the HOME's configured model
+        assert "--model" not in cmd
+
+        # Headless runs default to bypassPermissions (no one can answer prompts)
         assert "--permission-mode" in cmd
         perm_idx = cmd.index("--permission-mode")
         assert cmd[perm_idx + 1] == "bypassPermissions"
@@ -171,21 +169,23 @@ class TestCodexAdapter:
         assert cmd[0] == "codex"
         assert cmd[1] == "exec"
         
-        # Check prompt is in command
-        assert "Refactor the function" in cmd
-        
-        # Check default model
-        assert "--model" in cmd
-        model_idx = cmd.index("--model")
-        assert cmd[model_idx + 1] == "o4-mini"
-        
+        # Prompt is the last argument, protected by "--"
+        assert cmd[-2:] == ["--", "Refactor the function"]
+
+        # JSON event stream for structured results
+        assert "--json" in cmd
+
+        # No model by default: Codex uses the HOME's config.toml
+        assert "--model" not in cmd
+
         # Check default sandbox
         assert "--sandbox" in cmd
         sandbox_idx = cmd.index("--sandbox")
         assert cmd[sandbox_idx + 1] == "workspace-write"
-        
-        # Check full-auto mode
-        assert "--full-auto" in cmd
+
+        # --full-auto was removed from codex exec; never emit it
+        assert "--full-auto" not in cmd
+        assert "--skip-git-repo-check" in cmd
 
     def test_build_command_with_options(self):
         """Verify custom sandbox and add_dirs appear in command."""
