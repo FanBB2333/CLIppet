@@ -17,6 +17,7 @@ from textual.containers import Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Input, Label, Static
 
+from clippet.agents import AGENTS as AGENT_SPECS
 from clippet.isolation import AGENT_CONFIG_PATHS
 from clippet.tui.data import EnvView
 from clippet.tui.look import (
@@ -28,12 +29,7 @@ from clippet.tui.look import (
     short_path,
 )
 
-EXAMPLES = {
-    "codex": "e.g. resume --last   or   -m gpt-5.5",
-    "claude": "e.g. --continue   or   --model sonnet",
-    "gemini": "e.g. -m gemini-2.5-pro",
-    "qodercli": "anything qodercli takes",
-}
+EXAMPLES = {key: spec.examples for key, spec in AGENT_SPECS.items()}
 
 def launch_command(env: EnvView, agent: str, args: list[str]) -> str:
     """The command line that this launch is the same as."""
@@ -51,13 +47,8 @@ def _source_name(source: object) -> str:
 def resume_args(agent: str, session_id: str | None) -> list[str]:
     """The arguments that pick *agent*'s conversation *session_id* up interactively ([] when it cannot)."""
 
-    if not session_id:
-        return []
-    if agent == "codex":
-        return ["resume", session_id]
-    if agent == "claude":
-        return ["--resume", session_id]
-    return []
+    spec = AGENT_SPECS.get(agent)
+    return spec.resume_args(session_id) if spec is not None else []
 
 
 def resume_folder(ran_in: object, workspace: Path, p: dict[str, str]) -> tuple[Path, Text]:

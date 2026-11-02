@@ -3,34 +3,20 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import shutil
 import tempfile
+from pathlib import Path
 from typing import Iterable, Mapping, Protocol
 
+from clippet.agents import AGENTS
 
 # ---------------------------------------------------------------------------
 # Well-known config paths per agent (relative to HOME)
 # ---------------------------------------------------------------------------
 
 AGENT_CONFIG_PATHS: dict[str, list[str]] = {
-    "claude": [
-        ".claude",          # ~/.claude/ directory (settings.json, skills/, etc.)
-        ".claude.json",     # MCP config at HOME root
-    ],
-    "codex": [
-        ".codex",           # ~/.codex/ directory (auth.json, config.toml, etc.)
-    ],
-    "gemini": [
-        ".gemini",          # ~/.gemini/ directory (.env, settings.json, etc.)
-    ],
-    "qodercli": [
-        ".qoder",           # ~/.qoder/ directory (sessions, projects, skills, etc.)
-        ".qoder-cli",       # ~/.qoder-cli/ai-stats (commit AI-contribution stats)
-    ],
-    "opencode": [
-        ".config/opencode", # ~/.config/opencode/ (opencode.json, .env, etc.)
-    ],
+    **{key: list(spec.config_paths) for key, spec in AGENTS.items()},
+    "opencode": [".config/opencode"],  # ~/.config/opencode/ (opencode.json, .env, ...); API persona only
 }
 
 
@@ -50,37 +36,7 @@ HOME_POINTER_ENV_VARS: tuple[str, ...] = (
 # Per-agent variables that select a config directory, credential or endpoint.
 # Inheriting them would let the parent shell's identity override the identity
 # carried by the isolated HOME (e.g. CODEX_HOME pointing at ~/.codex).
-AGENT_IDENTITY_ENV_VARS: dict[str, tuple[str, ...]] = {
-    "codex": (
-        "CODEX_HOME",
-        "CODEX_API_KEY",
-        "CODEX_ACCESS_TOKEN",
-        "CODEX_REFRESH_TOKEN_URL_OVERRIDE",
-        "OPENAI_API_KEY",
-        "OPENAI_BASE_URL",
-        "OPENAI_ORG_ID",
-        "OPENAI_ORGANIZATION",
-        "OPENAI_PROJECT",
-        "OPENAI_PROJECT_ID",
-    ),
-    "claude": (
-        "CLAUDE_CONFIG_DIR",
-        "CLAUDE_CODE_OAUTH_TOKEN",
-        "ANTHROPIC_*",
-    ),
-    "gemini": (
-        "GEMINI_CLI_HOME",
-        "GEMINI_API_KEY",
-        "GEMINI_MODEL",
-        "GOOGLE_API_KEY",
-        "GOOGLE_GEMINI_BASE_URL",
-        "GOOGLE_APPLICATION_CREDENTIALS",
-        "GOOGLE_CLOUD_PROJECT",
-        "GOOGLE_CLOUD_LOCATION",
-        "GOOGLE_GENAI_USE_VERTEXAI",
-    ),
-    "qodercli": (),
-}
+AGENT_IDENTITY_ENV_VARS: dict[str, tuple[str, ...]] = {key: spec.identity_env for key, spec in AGENTS.items()}
 
 
 def scrub_patterns_for(agent: str | None) -> tuple[str, ...]:

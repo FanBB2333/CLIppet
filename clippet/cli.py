@@ -29,10 +29,7 @@ from clippet.adapters.base import (
     build_credential_set,
     create_isolated_environment,
 )
-from clippet.adapters.claude import ClaudeAdapter
-from clippet.adapters.codex import CodexAdapter
-from clippet.adapters.gemini import GeminiAdapter
-from clippet.adapters.qodercli import QoderCLIAdapter
+from clippet.agents import AGENT_KEYS, AGENTS, agent_list, agent_spec
 from clippet.auth.codex import (
     CodexCredential,
     CredentialFormatError,
@@ -46,8 +43,8 @@ from clippet.config.detector import (
 )
 from clippet.config.environments import (
     ENV_TYPE_HOME,
-    EnvironmentRegistryError,
     SEEDABLE_AGENTS,
+    EnvironmentRegistryError,
     add_environment,
     clone_home_env,
     create_home_env_with_report,
@@ -69,7 +66,7 @@ from clippet.isolation import (
 )
 from clippet.models import AgentRequest, IsolationConfig
 
-_NATIVE_AGENTS: tuple[str, ...] = ("claude", "codex", "gemini", "qodercli")
+_NATIVE_AGENTS: tuple[str, ...] = AGENT_KEYS
 
 # CLIppet run options that take a value (used to find the agent name).
 _VALUE_OPTIONS = frozenset(
@@ -283,7 +280,7 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
         nargs="?",
         default=None,
         help=(
-            "Native agent type (claude/codex/gemini/qodercli) or a composite "
+            f"Native agent type ({agent_list('/')}) or a composite "
             "config adapter name. Optional for native config files and "
             "single-adapter composite configs."
         ),
@@ -661,9 +658,9 @@ def _normalize_native_agent_type(
     if detected_type not in {"claude_code", "codex", "gemini"}:
         raise ValueError(f"Unsupported native config type: {detected_type}")
 
-    if agent_type == "qodercli":
+    if agent_type is not None and agent_type not in ("claude", "claude_code", "codex", "gemini"):
         raise ValueError(
-            "'qodercli' is only supported with CLIppet composite configs or "
+            f"'{agent_type}' is only supported with CLIppet composite configs or "
             "HOME envs. Please use a CLIppet config file or -e <env> instead."
         )
 
@@ -711,11 +708,11 @@ def _build_interactive_command(
     """Build the interactive command for a configured adapter."""
 
     builder = getattr(adapter, "build_interactive_command", None)
-    if isinstance(adapter, (ClaudeAdapter, CodexAdapter, GeminiAdapter, QoderCLIAdapter)) and callable(builder):
+    if callable(builder) and getattr(adapter, "isolation_agent", None) in AGENTS:
         return builder(list(extra_args or []))
 
     raise ValueError(
-        "Interactive launch is only supported for Claude, Codex, Gemini, and QoderCLI adapters."
+        f"Interactive launch is only supported for the agent CLIs ({agent_list()}), not API adapters."
     )
 
 
@@ -829,7 +826,7 @@ def _run_interactive(
         if not agent_type:
             _fail(
                 "agent_type is required when -c/-e points to a HOME directory "
-                "(second-home mode). Specify one of: claude, codex, gemini, qodercli."
+                f"(second-home mode). Specify one of: {agent_list()}."
             )
         try:
             adapter = create_adapter_from_config_file(config_path, agent_type)
@@ -965,7 +962,7 @@ def _run_second_home(
     if not agent_type:
         _fail(
             "agent_type is required when -c/-e points to a HOME directory "
-            "(second-home mode). Specify one of: claude, codex, gemini, qodercli."
+            f"(second-home mode). Specify one of: {agent_list()}."
         )
 
     try:
@@ -1422,15 +1419,10 @@ def _handle_auth(args: argparse.Namespace) -> None:
 def _make_native_adapter(agent_type: str) -> BaseSubprocessAdapter:
     """Construct a default adapter for a native agent type."""
 
-    if agent_type == "claude":
-        return ClaudeAdapter()
-    if agent_type == "codex":
-        return CodexAdapter()
-    if agent_type == "gemini":
-        return GeminiAdapter()
-    if agent_type == "qodercli":
-        return QoderCLIAdapter()
-    raise ValueError(f"Unsupported native agent type: {agent_type!r}")
+    spec = agent_spec(agent_type)
+    if spec is None:
+        raise ValueError(f"Unsupported native agent type: {agent_type!r}")
+    return spec.adapter_class()()
 
 
 def _launch_native_directly(agent_type: str, passthrough: list[str] | None = None) -> None:

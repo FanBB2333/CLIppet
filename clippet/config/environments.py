@@ -43,6 +43,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from clippet.agents import AGENTS, SeedSpec
 from clippet.isolation import copy_tree
 
 ENV_TYPE_HOME = "home"
@@ -58,68 +59,14 @@ _ENV_NAME_RE = re.compile(r"^[^\W][\w.\-]*$")
 DEFAULT_SHARED_ENTRIES: tuple[str, ...] = (".gitconfig", ".config/git")
 
 
-@dataclass(frozen=True)
-class SeedSpec:
-    """What ``--from-current`` copies for one agent (paths relative to HOME)."""
-
-    entries: tuple[str, ...]
-    credentials: tuple[str, ...] = ()
-    exclude: tuple[str, ...] = ()
-
-
-SEED_SPECS: dict[str, SeedSpec] = {
-    "claude": SeedSpec(
-        entries=(
-            ".claude/settings.json",
-            ".claude/CLAUDE.md",
-            ".claude/agents",
-            ".claude/commands",
-            ".claude/skills",
-            ".claude/output-styles",
-            ".claude/hooks",
-            ".claude.json",
-        ),
-        credentials=(".claude/.credentials.json",),
-    ),
-    "codex": SeedSpec(
-        entries=(
-            ".codex/config.toml",
-            ".codex/AGENTS.md",
-            ".codex/AGENTS.override.md",
-            ".codex/hooks.json",
-            ".codex/keybindings.json",
-            ".codex/skills",
-            ".codex/prompts",
-            ".codex/rules",
-        ),
-        credentials=(".codex/auth.json",),
-    ),
-    "gemini": SeedSpec(
-        entries=(
-            ".gemini/settings.json",
-            ".gemini/GEMINI.md",
-            ".gemini/commands",
-            ".gemini/extensions",
-        ),
-        credentials=(
-            ".gemini/.env",
-            ".gemini/oauth_creds.json",
-            ".gemini/google_accounts.json",
-        ),
-    ),
-    # qodercli keeps its main state in ~/.qoder/ and AI-contribution stats
-    # (written by `qodercli commit`) in ~/.qoder-cli/.  Its layout is not
-    # documented, so the directories are copied minus obvious runtime state.
-    "qodercli": SeedSpec(
-        entries=(".qoder", ".qoder-cli"),
-        exclude=("logs", "log", "cache", "*.sock", "*.lock", "*.pid"),
-    ),
-}
+# What --from-current copies for each agent lives with the rest of what CLIppet
+# knows about that agent (clippet.agents); these names are kept for callers.
+SEED_SPECS: dict[str, SeedSpec] = {key: spec.seed for key, spec in AGENTS.items() if spec.seed is not None}
 
 SEEDABLE_AGENTS: tuple[str, ...] = tuple(SEED_SPECS)
 
 # Identity fields Claude Code keeps in ~/.claude.json next to MCP settings.
-_CLAUDE_JSON_IDENTITY_KEYS = ("primaryApiKey", "oauthAccount")
+_CLAUDE_JSON_IDENTITY_KEYS = AGENTS["claude"].seed.scrub[".claude.json"]
 
 
 class EnvironmentRegistryError(ValueError):
@@ -335,12 +282,18 @@ def _copy_entry(src: Path, dst: Path, exclude: tuple[str, ...]) -> None:
 def _copy_sanitized_claude_json(src: Path, dst: Path) -> None:
     """Copy ~/.claude.json (MCP servers, project settings) minus identity keys."""
 
+    _copy_scrubbed_json(src, dst, _CLAUDE_JSON_IDENTITY_KEYS)
+
+
+def _copy_scrubbed_json(src: Path, dst: Path, keys: tuple[str, ...]) -> None:
+    """Copy a JSON settings file minus the top-level *keys* that carry a login."""
+
     try:
         data = json.loads(src.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return
     if isinstance(data, dict):
-        for key in _CLAUDE_JSON_IDENTITY_KEYS:
+        for key in keys:
             data.pop(key, None)
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -380,8 +333,8 @@ def seed_from_home(
             if not (src.exists() or src.is_symlink()):
                 continue
             dst = target / rel
-            if agent == "claude" and rel == ".claude.json" and not with_auth:
-                _copy_sanitized_claude_json(src, dst)
+            if rel in spec.scrub and not with_auth:
+                _copy_scrubbed_json(src, dst, spec.scrub[rel])
             else:
                 _copy_entry(src, dst, spec.exclude)
             report.copied.append(rel)

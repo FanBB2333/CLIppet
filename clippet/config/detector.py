@@ -24,7 +24,7 @@ from clippet.adapters.base import BaseAdapter, BaseSubprocessAdapter
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.adapters.codex import CodexAdapter
 from clippet.adapters.gemini import GeminiAdapter, parse_gemini_env_file
-from clippet.adapters.qodercli import QoderCLIAdapter
+from clippet.agents import agent_list, agent_spec
 from clippet.auth.codex import (
     AUTH_MODE_APIKEY,
     FORMAT_NATIVE,
@@ -427,8 +427,8 @@ def create_adapter_with_second_home(
 
     Args:
         home_dir: Path to the second-home directory.
-        agent_type: ``"claude"`` / ``"claude_code"``, ``"codex"``, ``"gemini"``,
-            or ``"qodercli"``.
+        agent_type: a key of :data:`clippet.agents.AGENTS` (``"claude_code"``
+            is taken for ``"claude"``).
         **adapter_kwargs: Extra keyword arguments forwarded to the adapter
             constructor.
 
@@ -443,26 +443,20 @@ def create_adapter_with_second_home(
 
     isolation = IsolationConfig(home_dir=home_dir)
 
-    if agent_type in ("claude", "claude_code"):
-        adapter = ClaudeAdapter(**adapter_kwargs)
-    elif agent_type == "codex":
-        if (Path(home_dir) / ".codex" / "auth.json").is_file():
-            # The env carries its login as a file; make sure a copied
-            # config.toml selecting the OS keyring cannot hide it.
-            overrides = dict(adapter_kwargs.pop("config_overrides", None) or {})
-            key, value = CODEX_FILE_STORE_OVERRIDE
-            overrides.setdefault(key, value)
-            adapter_kwargs["config_overrides"] = overrides
-        adapter = CodexAdapter(**adapter_kwargs)
-    elif agent_type == "gemini":
-        adapter = GeminiAdapter(**adapter_kwargs)
-    elif agent_type == "qodercli":
-        adapter = QoderCLIAdapter(**adapter_kwargs)
-    else:
+    spec = agent_spec(agent_type)
+    if spec is None:
         raise ValueError(
             f"Second-home mode is not supported for agent type '{agent_type}'. "
-            "Supported types: 'claude', 'codex', 'gemini', 'qodercli'."
+            f"Supported types: {agent_list()}."
         )
+    if spec.key == "codex" and (Path(home_dir) / ".codex" / "auth.json").is_file():
+        # The env carries its login as a file; make sure a copied
+        # config.toml selecting the OS keyring cannot hide it.
+        overrides = dict(adapter_kwargs.pop("config_overrides", None) or {})
+        key, value = CODEX_FILE_STORE_OVERRIDE
+        overrides.setdefault(key, value)
+        adapter_kwargs["config_overrides"] = overrides
+    adapter = spec.adapter_class()(**adapter_kwargs)
 
     adapter.default_isolation = isolation
     return adapter
@@ -537,7 +531,7 @@ def create_adapter_from_config_file(
         if agent_type is None:
             raise ValueError(
                 "agent_type is required when -c points to a directory "
-                "(second-home mode).  Specify one of: claude, codex, gemini, qodercli."
+                f"(second-home mode).  Specify one of: {agent_list()}."
             )
         effective_type = "claude_code" if agent_type == "claude" else agent_type
         return create_adapter_with_second_home(

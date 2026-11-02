@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from clippet.agents import AGENTS
 from clippet.auth.codex import CodexCredential, load_codex_credentials
 from clippet.auth.quota import QuotaReading, codex_reading_for, newest
 from clippet.config.environments import (
@@ -30,13 +31,8 @@ from clippet.config.environments import (
 from clippet.isolation import AGENT_CONFIG_PATHS, AGENT_IDENTITY_ENV_VARS, HOME_POINTER_ENV_VARS
 
 BASE = "base"
-AGENT_BINARIES = {"codex": "codex", "claude": "claude", "gemini": "gemini", "qodercli": "qodercli"}
-INSTALL_HINTS = {
-    "codex": "npm i -g @openai/codex",
-    "claude": "npm i -g @anthropic-ai/claude-code",
-    "gemini": "npm i -g @google/gemini-cli",
-    "qodercli": "see qoder.com/cli",
-}
+AGENT_BINARIES = {key: spec.binary for key, spec in AGENTS.items()}
+INSTALL_HINTS = {key: spec.install for key, spec in AGENTS.items()}
 
 
 def login_state(credential: CodexCredential | None) -> str:
@@ -437,7 +433,7 @@ def load_project(workspace: Path) -> ProjectView:
     except (OSError, ValueError) as exc:
         view.error = f"cannot read {view.config_path}: {exc}"
         return view
-    for agent in ("codex", "claude", "gemini", "qodercli"):
+    for agent in AGENTS:
         try:
             launch = resolve_project_launch(workspace, agent)
         except KeyError:

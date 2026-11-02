@@ -22,8 +22,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, create_model, model_validator
 
+from clippet.agents import AGENT_KEYS
 
 PROJECT_CONFIG_FILENAME = ".clippet.json"
 
@@ -53,17 +54,14 @@ class ProjectAgentConfig(BaseModel):
         return self
 
 
-class ProjectAgentsConfig(BaseModel):
-    """Container for agent configurations in .clippet.json.
-
-    extra="forbid" rejects unknown agent names.
-    """
-    model_config = ConfigDict(extra="forbid")
-
-    claude: ProjectAgentConfig | None = None
-    codex: ProjectAgentConfig | None = None
-    gemini: ProjectAgentConfig | None = None
-    qodercli: ProjectAgentConfig | None = None
+# One optional field per agent CLI (clippet.agents.AGENTS); extra="forbid"
+# rejects unknown agent names.
+ProjectAgentsConfig = create_model(
+    "ProjectAgentsConfig",
+    __config__=ConfigDict(extra="forbid"),
+    __doc__="Container for agent configurations in .clippet.json.",
+    **{key: (ProjectAgentConfig | None, None) for key in AGENT_KEYS},
+)
 
 
 class ProjectConfig(BaseModel):
@@ -83,7 +81,7 @@ class ResolvedProjectLaunch:
     
     All paths are resolved to absolute paths.
     """
-    agent_type: Literal["claude", "codex", "gemini", "qodercli"]
+    agent_type: str  # a key of clippet.agents.AGENTS
     project_root: Path
     config_file: Path
     config_path: str | None
@@ -224,7 +222,7 @@ def _resolve_project_path(raw_path: str | None, project_root: Path) -> str | Non
 
 def resolve_project_launch(
     start_dir: Path,
-    agent_type: Literal["claude", "codex", "gemini", "qodercli"],
+    agent_type: str,
 ) -> ResolvedProjectLaunch:
     """Find and resolve project-level config for launching an agent.
     
@@ -234,7 +232,7 @@ def resolve_project_launch(
     
     Args:
         start_dir: Directory to start searching from (usually cwd).
-        agent_type: The agent to launch ("claude", "codex", "gemini", "qodercli").
+        agent_type: The agent to launch, a key of :data:`clippet.agents.AGENTS`.
         
     Returns:
         ResolvedProjectLaunch with all paths resolved.

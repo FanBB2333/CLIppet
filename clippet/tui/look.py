@@ -15,6 +15,8 @@ from rich.cells import cell_len
 from rich.text import Text
 from textual.theme import Theme
 
+from clippet.agents import AGENT_KEYS
+from clippet.agents import AGENTS as AGENT_SPECS
 from clippet.tui.anim import bar, breathe, mix, star
 
 if TYPE_CHECKING:
@@ -37,9 +39,9 @@ PALETTES: dict[str, dict[str, str]] = {
 }
 DEFAULT_THEME = "clippet"
 
-AGENTS = ("codex", "claude", "gemini", "qodercli")
-AGENT_COLOR = {"claude": "plum", "codex": "ok", "gemini": "brand", "qodercli": "info"}
-AGENT_LETTER = {"claude": "C", "codex": "X", "gemini": "G", "qodercli": "Q"}
+AGENTS = AGENT_KEYS
+AGENT_COLOR = {key: spec.color for key, spec in AGENT_SPECS.items()}
+AGENT_LETTER = {key: spec.letter for key, spec in AGENT_SPECS.items()}
 
 MARK: list[list[tuple[str, str]]] = [
     [("               ⢀⠔⠢⡄     ", "ink")],

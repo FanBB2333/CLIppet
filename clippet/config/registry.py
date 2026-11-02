@@ -5,15 +5,12 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from clippet.adapters.claude import ClaudeAdapter
-from clippet.adapters.codex import CodexAdapter
-from clippet.adapters.gemini import GeminiAdapter
-from clippet.adapters.qodercli import QoderCLIAdapter
+from clippet.agents import AGENT_KEYS, AGENTS, agent_list
 from clippet.models import IsolationConfig
 from clippet.orchestrator import ClippetRunner
 
@@ -43,14 +40,22 @@ class AdapterConfig(BaseModel):
     """Configuration for a single adapter.
 
     Attributes:
-        adapter_type: Type of adapter - "claude", "codex", "qodercli", or "gemini".
+        adapter_type: The agent CLI, a key of :data:`clippet.agents.AGENTS`
+            ("codex", "claude", "gemini", "qodercli", ...).
         name: Registration name for the adapter in the runner.
         options: Adapter constructor kwargs (model, etc.).
     """
 
-    adapter_type: Literal["claude", "codex", "qodercli", "gemini"]
+    adapter_type: str
     name: str
     options: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("adapter_type")
+    @classmethod
+    def _known_agent(cls, value: str) -> str:
+        if value not in AGENT_KEYS:
+            raise ValueError(f"unknown adapter_type '{value}'; use one of {agent_list()}")
+        return value
 
 
 class ClippetConfig(BaseModel):
@@ -110,12 +115,7 @@ def create_runner_from_config(config: ClippetConfig) -> ClippetRunner:
         ValueError: If an unknown adapter_type or credential profile is specified.
     """
 
-    adapter_classes = {
-        "claude": ClaudeAdapter,
-        "codex": CodexAdapter,
-        "gemini": GeminiAdapter,
-        "qodercli": QoderCLIAdapter,
-    }
+    adapter_classes = {key: spec.adapter_class() for key, spec in AGENTS.items()}
 
     runner = ClippetRunner(max_workers=config.max_workers)
 

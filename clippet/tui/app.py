@@ -506,7 +506,7 @@ class ClippetApp(App):
             ("Everywhere", [
                 ("1 … 5", "Envs / Accounts / Runs / Project / Checks"),
                 ("i", "write a prompt (runs headless in the selected or marked envs)"),
-                ("Tab (in the box)", "switch agent: codex / claude / gemini / qodercli"),
+                ("Tab (in the box)", f"switch agent: {' / '.join(AGENTS)}"),
                 ("Ctrl+B (in the box)", "Codex sandbox: workspace-write / read-only"),
                 ("w", "change the workspace runs start in"),
                 ("Ctrl+R", "read everything again"),

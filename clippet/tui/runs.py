@@ -216,10 +216,7 @@ def step_from_item(item: dict[str, Any], finished: bool) -> Step | None:
 def adapter_for(env: EnvView, agent: str, sandbox: str | None = None) -> BaseSubprocessAdapter:
     """The adapter that runs *agent* as *env* (``base`` is the real HOME)."""
 
-    from clippet.adapters.claude import ClaudeAdapter
-    from clippet.adapters.codex import CodexAdapter
-    from clippet.adapters.gemini import GeminiAdapter
-    from clippet.adapters.qodercli import QoderCLIAdapter
+    from clippet.agents import agent_spec
     from clippet.config.detector import (
         create_adapter_from_config_file,
         create_adapter_with_second_home,
@@ -228,8 +225,10 @@ def adapter_for(env: EnvView, agent: str, sandbox: str | None = None) -> BaseSub
 
     kwargs: dict[str, Any] = {"sandbox": sandbox} if agent == "codex" and sandbox else {}
     if env.kind == BASE:
-        classes = {"codex": CodexAdapter, "claude": ClaudeAdapter, "gemini": GeminiAdapter, "qodercli": QoderCLIAdapter}
-        return classes[agent](**kwargs)
+        spec = agent_spec(agent)
+        if spec is None:
+            raise ValueError(f"CLIppet does not know the agent '{agent}'")
+        return spec.adapter_class()(**kwargs)
     if not env.exists or env.path is None:
         raise ValueError(f"env '{env.name}' is missing on disk: {env.path}")
     if env.is_home:
