@@ -96,7 +96,7 @@ class RunsPlace(Place):
     def help_rows(self) -> list[tuple[str, str]]:
         return [
             ("i", "write a prompt; it runs in the selected env, or in every marked env"),
-            ("c", "continue this run interactively (codex resume <session>)"),
+            ("c", "continue this run in the agent itself: shows as whom and where first"),
             ("R", "run the same prompt again"),
             ("k", "stop a run that is still going"),
             ("y", "copy the answer"),
@@ -289,6 +289,15 @@ class RunsPlace(Place):
             self.clippet.start_runs(run.prompt, [run.env], agent=run.agent, sandbox=run.sandbox)
 
     def action_continue(self) -> None:
+        """Pick this run's conversation up interactively, after showing as whom and where."""
+
+        from clippet.tui.views.launch import (
+            Launch,
+            conversation,
+            resume_args,
+            resume_folder,
+        )
+
         run = self.current()
         if run is None:
             return
@@ -296,12 +305,17 @@ class RunsPlace(Place):
         if env is None:
             self.app.notify(f"env '{run.env}' is gone", severity="error")
             return
-        if run.agent == "codex" and run.session_id:
-            self.clippet.launch(env, "codex", ["resume", run.session_id], cwd=str(run.workspace))
-        elif run.agent == "claude" and run.session_id:
-            self.clippet.launch(env, "claude", ["--resume", run.session_id], cwd=str(run.workspace))
-        else:
-            self.clippet.launch(env, run.agent, [], cwd=str(run.workspace))
+        args = resume_args(run.agent, run.session_id)
+        folder, note = resume_folder(run.workspace, self.clippet.workspace, self.pal)
+        lead = f"run #{run.id} · " if args else f"run #{run.id} left no session to resume · "
+
+        def done(choice: tuple[str, list[str]] | None) -> None:
+            if choice:
+                self.clippet.launch(env, *choice, cwd=str(folder))
+
+        self.app.push_screen(Launch(env, run.agent, folder, self.pal, args=args,
+                                    session=conversation(run.prompt, self.pal, lead=lead), lock_agent=True,
+                                    folder_note=note, title=f"Continue in {env.name}"), done)
 
     def action_copy(self) -> None:
         run = self.current()

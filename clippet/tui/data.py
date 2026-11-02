@@ -263,6 +263,15 @@ def codex_sessions(codex_home: Path | None, limit: int = 12) -> list[SessionView
     return out
 
 
+def last_active(session: SessionView) -> float:
+    """When the session was last written to (0 when its file cannot be read)."""
+
+    try:
+        return session.path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
 def count_sessions(codex_home: Path | None) -> int:
     if codex_home is None or not (codex_home / "sessions").is_dir():
         return 0

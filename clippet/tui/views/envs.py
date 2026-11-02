@@ -16,7 +16,14 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable
 
-from clippet.tui.data import BASE, EnvView, SessionView, codex_sessions, count_sessions
+from clippet.tui.data import (
+    BASE,
+    EnvView,
+    SessionView,
+    codex_sessions,
+    count_sessions,
+    last_active,
+)
 from clippet.tui.look import (
     AGENT_COLOR,
     AGENT_LETTER,
@@ -112,8 +119,8 @@ class EnvsPlace(Place):
     def help_rows(self) -> list[tuple[str, str]]:
         return [
             ("Enter", "launch an agent here: shows who it runs as, its HOME and folder; Enter again starts it"),
-            ("x", "launch Codex here right away"),
-            ("r / s", "resume the last Codex session / pick one"),
+            ("x", "launch Codex here right away, without asking"),
+            ("r / s", "resume the newest Codex session / pick one: shows which, as whom and where first"),
             ("Space", "mark envs: a prompt then runs in every marked env"),
             ("n / c", "new env / clone this one"),
             ("a", "import a Codex account into this env"),
@@ -350,17 +357,29 @@ class EnvsPlace(Place):
 
         self.app.push_screen(Launch(env, self.clippet.agent, self.clippet.workspace, self.pal), done)
 
+    def codex_sessions_of(self, env: EnvView) -> list[SessionView]:
+        cached = self.sessions.get(env.name)
+        if cached:
+            return cached[1]
+        if not env.is_home:
+            return []
+        return codex_sessions(env.codex_home, limit=12)
+
     def action_resume_last(self) -> None:
         env = self.current()
-        if env is not None:
-            self.clippet.launch(env, "codex", ["resume", "--last"])
+        if env is None:
+            return
+        sessions = self.codex_sessions_of(env)
+        if not sessions:
+            self.app.notify("No Codex sessions in this env yet.", title=env.name)
+            return
+        self.confirm_resume(env, max(sessions, key=last_active), "the newest")
 
     def action_pick_session(self) -> None:
         env = self.current()
         if env is None:
             return
-        cached = self.sessions.get(env.name)
-        sessions = cached[1] if cached else codex_sessions(env.codex_home, limit=12)
+        sessions = self.codex_sessions_of(env)
         if not sessions:
             self.app.notify("No Codex sessions in this env yet.", title=env.name)
             return
@@ -375,9 +394,25 @@ class EnvsPlace(Place):
 
         def done(session: SessionView | None) -> None:
             if session is not None:
-                self.clippet.launch(env, "codex", ["resume", session.id], cwd=session.cwd or None)
+                self.confirm_resume(env, session)
 
         self.app.push_screen(Pick(f"Resume a Codex session in {env.name}", options), done)
+
+    def confirm_resume(self, env: EnvView, session: SessionView, which: str = "") -> None:
+        """Show which conversation, as whom and where, before ``codex resume`` takes the terminal."""
+
+        from clippet.tui.views.launch import Launch, conversation, resume_folder
+
+        folder, note = resume_folder(session.cwd, self.clippet.workspace, self.pal)
+
+        def done(choice: tuple[str, list[str]] | None) -> None:
+            if choice:
+                self.clippet.launch(env, *choice, cwd=str(folder))
+
+        lead = f"{which} · " if which else ""
+        self.app.push_screen(Launch(env, "codex", folder, self.pal, args=["resume", session.id],
+                                    session=conversation(session.prompt, self.pal, session.started, lead),
+                                    lock_agent=True, folder_note=note, title=f"Resume in {env.name}"), done)
 
     def action_mark(self) -> None:
         env = self.current()

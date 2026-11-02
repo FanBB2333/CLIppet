@@ -60,9 +60,9 @@ clippet -e work codex -c model_reasoning_effort=high
 
 | Place | What it shows | Keys |
 |-------|---------------|------|
-| **1 Envs** | `base` (your real HOME) and every env: its Codex account, plan, how much of its usage limits is left, linked source, agent dirs and recent Codex sessions | `Enter` launch an agent: who it runs as, its HOME and folder are shown first, add arguments if you like and `Enter` again (`Tab` picks another agent) · `x` Codex · `r` / `s` resume a session · `Space` mark · `n` / `c` / `d` new, clone, remove · `a` import an account · `y` sync a linked login |
+| **1 Envs** | `base` (your real HOME) and every env: its Codex account, plan, how much of its usage limits is left, linked source, agent dirs and recent Codex sessions | `Enter` launch an agent: who it runs as, its HOME and folder are shown first, add arguments if you like and `Enter` again (`Tab` picks another agent) · `x` Codex right away, no questions · `r` / `s` resume the newest Codex session / pick one, again showing which conversation, as whom and in which folder first · `Space` mark · `n` / `c` / `d` new, clone, remove · `a` import an account · `y` sync a linked login |
 | **2 Accounts** | every Codex account in Cockpit Tools and in the files you add (exports, sub2api, CLIProxyAPI, `auth.json`), how much of its limits is left, and which env holds it | `Enter` put it into an env · `x` export `auth.json` · `+` / `-` add or forget a file |
-| **3 Runs** | the prompts you sent, streamed: commands, edits, tool calls, the answer, tokens | `c` continue in the agent · `R` run again · `k` stop · `y` copy the answer |
+| **3 Runs** | the prompts you sent, streamed: commands, edits, tool calls, the answer, tokens | `c` continue the run's conversation in the agent (shown first, like a launch) · `R` run again · `k` stop · `y` copy the answer |
 | **4 Project** | the workspace and its `.clippet.json`: what each agent resolves to | `p` pin an agent to an env · `w` workspace · `e` edit |
 | **5 Checks** | agent CLIs and versions, CLIppet's paths, Cockpit Tools access, the variables isolation drops, env health | `Ctrl+R` check again |
 
