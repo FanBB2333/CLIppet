@@ -2,15 +2,18 @@
 
 > 为 CLIppet 提供凭证隔离与环境沙箱能力，使每个 agent 子进程运行在独立的配置/凭证上下文中，互不干扰。
 
+> **状态**：本文的 P0–P2 均已实现（`clippet/isolation.py`、`clippet/models.py`、`clippet/config/registry.py`）。实现之后的演进见文末「后续演进」。
+
 ## 动机
 
 CLI agent 工具（Claude Code、Codex 等）默认读取用户主目录下的配置文件来获取凭证和设置：
 
 | Agent | 凭证/配置路径 |
 |-------|---------------|
-| Claude Code | `~/.claude/settings.json`, `~/.claude/credentials.json` |
-| Codex | `~/.codex/auth.json` |
-| Qoder | `~/.config/qoder/` 或环境变量 |
+| Claude Code | `~/.claude/settings.json`, `~/.claude/.credentials.json`, `~/.claude.json` |
+| Codex | `~/.codex/auth.json`, `~/.codex/config.toml`（或 `$CODEX_HOME`） |
+| Gemini CLI | `~/.gemini/.env`, `~/.gemini/oauth_creds.json`, `~/.gemini/settings.json` |
+| QoderCLI | `~/.qoder/`, `~/.qoder-cli/` |
 
 当前 `BaseSubprocessAdapter` 使用 `env=None` 启动子进程，直接继承父进程的全部环境变量和文件系统访问权限。这意味着：
 
@@ -47,9 +50,9 @@ CLI agent 工具（Claude Code、Codex 等）默认读取用户主目录下的�
 
 ### 1. `IsolatedEnvironment` — 隔离环境上下文管理器
 
-- [ ] 创建临时沙箱目录作为 agent 的虚拟 `$HOME`
-- [ ] 支持 context manager 协议（`with IsolatedEnvironment(...) as env:`），退出时自动清理
-- [ ] 可选持久化模式（不自动清理，用于调试或复用）
+- [x] 创建临时沙箱目录作为 agent 的虚拟 `$HOME`
+- [x] 支持 context manager 协议（`with IsolatedEnvironment(...) as env:`），退出时自动清理
+- [x] 可选持久化模式（不自动清理，用于调试或复用）
 
 ```python
 class IsolatedEnvironment:
@@ -79,9 +82,9 @@ class IsolatedEnvironment:
 
 ### 2. `CredentialProvider` — 凭证注入策略
 
-- [ ] 定义统一的凭证提供协议
-- [ ] 支持多种凭证来源：文件复制、模板渲染、环境变量注入
-- [ ] 凭证写入沙箱 HOME 的对应路径，而非真实 HOME
+- [x] 定义统一的凭证提供协议
+- [x] 支持多种凭证来源：文件复制、模板渲染、环境变量注入
+- [x] 凭证写入沙箱 HOME 的对应路径，而非真实 HOME
 
 ```python
 class CredentialProvider(Protocol):
@@ -127,7 +130,7 @@ class CredentialSet:
 
 ### 3. `AgentRequest` 扩展
 
-- [ ] 在 `AgentRequest` 中增加可选的隔离环境配置字段
+- [x] 在 `AgentRequest` 中增加可选的隔离环境配置字段
 
 ```python
 class AgentRequest(BaseModel):
@@ -153,9 +156,9 @@ class IsolationConfig(BaseModel):
 
 ### 4. `BaseSubprocessAdapter` 改造
 
-- [ ] `run()` / `run_async()` 中检测 `request.isolation`，有值时构建 `IsolatedEnvironment`
-- [ ] 将 `env=None` 替换为 `env=isolated_env.env`
-- [ ] 确保 `$HOME` 指向沙箱目录
+- [x] `run()` / `run_async()` 中检测 `request.isolation`，有值时构建 `IsolatedEnvironment`
+- [x] 将 `env=None` 替换为 `env=isolated_env.env`
+- [x] 确保 `$HOME` 指向沙箱目录
 
 ```python
 # base.py 中的关键改动（伪代码）
@@ -171,7 +174,7 @@ def run(self, request: AgentRequest) -> AgentResult:
 
 ### 5. YAML 配置支持
 
-- [ ] 支持在配置文件中声明凭证 profile，按名称引用
+- [x] 支持在配置文件中声明凭证 profile，按名称引用
 
 ```yaml
 # clippet-config.yaml
@@ -179,7 +182,7 @@ credential_profiles:
   personal:
     files:
       ".claude/settings.json": "/Users/me/profiles/personal/claude-settings.json"
-      ".claude/credentials.json": "/Users/me/profiles/personal/claude-creds.json"
+      ".claude/.credentials.json": "/Users/me/profiles/personal/claude-creds.json"
     env:
       ANTHROPIC_API_KEY: "${PERSONAL_API_KEY}"
 
@@ -214,23 +217,24 @@ from clippet import ClippetRunner, AgentRequest, IsolationConfig
 from clippet.adapters.claude import ClaudeAdapter
 
 runner = ClippetRunner()
-runner.register("claude", ClaudeAdapter())
+runner.register("claude-a", ClaudeAdapter())
+runner.register("claude-b", ClaudeAdapter())
 
 results = runner.execute_parallel({
-    "task-with-key-A": ("claude", AgentRequest(
+    "claude-a": AgentRequest(
         task_prompt="review this code",
         workspace_dir=Path("./repo"),
         isolation=IsolationConfig(
             env_overrides={"ANTHROPIC_API_KEY": "sk-key-A"},
         ),
-    )),
-    "task-with-key-B": ("claude", AgentRequest(
+    ),
+    "claude-b": AgentRequest(
         task_prompt="review this code",
         workspace_dir=Path("./repo"),
         isolation=IsolationConfig(
             env_overrides={"ANTHROPIC_API_KEY": "sk-key-B"},
         ),
-    )),
+    ),
 })
 ```
 
@@ -242,7 +246,7 @@ request = AgentRequest(
     isolation=IsolationConfig(
         credential_files={
             ".claude/settings.json": "/tmp/test-settings.json",
-            ".claude/credentials.json": "/tmp/test-creds.json",
+            ".claude/.credentials.json": "/tmp/test-creds.json",
         },
         persist_sandbox=True,  # 保留沙箱用于事后检查
     ),
@@ -276,3 +280,13 @@ request = AgentRequest(
 - `persist_sandbox=False` 时，退出 context manager 必须确保沙箱目录被删除（即使出现异常）
 - 环境变量中的敏感值不应出现在日志或 `AgentResult.raw_output` 中
 - 考虑未来增加 secret masking 能力，在 output parsing 阶段过滤已知的 key pattern
+
+## 后续演进
+
+在本设计落地之后，隔离层又增加了以下能力：
+
+- **持久 HOME 容器**：`IsolationConfig(home_dir=...)` 让 agent 直接以某个持久目录为 `$HOME`（`~/.clippet/envs/<name>/`，由 `clippet env` 管理），会话、登录与历史跨次保留；新建的 env 默认以符号链接共享 `~/.gitconfig` 与 `~/.config/git`。
+- **身份环境变量清洗**：`scrub_agent_env=True`（默认）时，从继承的环境中移除会把 agent 重定向到别处的变量，例如 `CODEX_HOME`、`OPENAI_API_KEY`、`ANTHROPIC_*`、`GEMINI_API_KEY` 以及 `XDG_*_HOME`；之后再应用 `env_overrides`。
+- **生成型凭证**：`credential_contents`（`ContentCredentialProvider`）把内存中生成的文件（例如由 Cockpit Tools / sub2api / CLIProxyAPI 账号转换出的 Codex `auth.json`）以 `0600` 原子写入沙箱。
+- **刷新回写**：`sync_back`（`CredentialSyncBack`）在运行前记录凭证文件快照，运行结束后若 agent 刷新了 token，就把新文件写回指定位置，避免轮换式 refresh token 随临时 HOME 一起丢失。
+- **安全拷贝**：复制目录时跳过 socket、FIFO 等特殊文件；凭证文件统一 `0600`，env 目录 `0700`。
