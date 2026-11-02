@@ -249,16 +249,29 @@ class EnvsPlace(Place):
         return Group(*parts)
 
     def agent_lines(self, env: EnvView) -> list[Text]:
-        """Per agent other than Codex: who it is logged in as here."""
+        """Per agent other than Codex: the third-party API it uses here, or who it is logged in as."""
 
         p = self.pal
         lines: list[Text] = []
         for agent in AGENTS:
-            who = None if agent == "codex" else login_of(env.path, agent)
-            if who is None:
+            if agent == "codex" and env.credential is not None:
+                continue  # the Codex block says it
+            endpoint = env.endpoint(agent)
+            who = None if endpoint is not None or agent == "codex" else login_of(env.path, agent)
+            if endpoint is None and who is None:
                 continue
             line = Text(f"  {agent:<9}", style=p[AGENT_COLOR[agent]])
-            line.append(who, style=p["ink"])
+            if endpoint is not None:
+                line.append("API @ ", style=p["muted"])
+                line.append(endpoint.url, style=p["ink"])
+                if endpoint.model:
+                    line.append(f"  {endpoint.model}", style=p["brand"])
+                line.append(f"  key {endpoint.key}" if endpoint.key else "  no key", style=p["muted"])
+                missing = env.unset_references(agent)
+                if missing:
+                    line.append(f"  {', '.join('$' + name for name in missing)} not set", style=p["bad"])
+            else:
+                line.append(who or "", style=p["ink"])
             lines.append(line)
         return lines
 

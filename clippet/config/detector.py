@@ -447,8 +447,14 @@ def create_adapter_with_second_home(
             f"Second-home mode is not supported for agent type '{agent_type}'. "
             f"Supported types: {agent_list()}."
         )
-    # an env is not your real HOME: what the agent should do differently there
-    run_env = {} if Path(home_dir) == Path.home().resolve() else dict(spec.run_env)
+    run_env: dict[str, str] = {}
+    if Path(home_dir) != Path.home().resolve():
+        from clippet.endpoints import run_vars
+
+        # an env is not your real HOME: what the agent should do differently
+        # there, then what the env sets for it (a third-party endpoint, ...)
+        run_env.update(spec.run_env)
+        run_env.update(run_vars(home_dir, spec.key))
     isolation = IsolationConfig(home_dir=home_dir, env_overrides=run_env)
     if spec.key == "codex" and (Path(home_dir) / ".codex" / "auth.json").is_file():
         # The env carries its login as a file; make sure a copied

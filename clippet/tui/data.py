@@ -84,6 +84,37 @@ class EnvView:
     def login(self) -> str:
         return login_state(self.credential)
 
+    def endpoint(self, agent: str):
+        """Where *agent* sends its requests here when not to its maker (an :class:`Endpoint`), or None."""
+
+        from clippet.agents import agent_spec
+        from clippet.config.environments import env_vars
+        from clippet.endpoints import Endpoint, endpoint_of
+
+        spec = agent_spec(agent)
+        if spec is None or self.path is None or self.kind not in (BASE, ENV_TYPE_HOME):
+            return None
+        if self.kind == BASE:  # nothing is dropped there: your shell's variables count
+            names = spec.endpoint
+            if names.base_url and os.environ.get(names.base_url):
+                key = next((f"${name}" for name in names.key if os.environ.get(name)), None)
+                model = os.environ.get(names.model) if names.model else None
+                return Endpoint(url=os.environ[names.base_url], key=key, model=model or None,
+                                source="your environment")
+            return endpoint_of(self.path, spec.key, {})
+        return endpoint_of(self.path, spec.key, env_vars(self.profile, spec.key))
+
+    def unset_references(self, agent: str) -> list[str]:
+        """The ``${NAME}`` this env needs for *agent* that are not set where CLIppet runs."""
+
+        from clippet.config.environments import env_vars
+        from clippet.endpoints import references
+
+        if self.kind != ENV_TYPE_HOME:
+            return []
+        values = env_vars(self.profile, agent).values()
+        return sorted({name for value in values for name in references(value) if not os.environ.get(name)})
+
     @property
     def codex_home(self) -> Path | None:
         """Where Codex keeps its state for this env."""

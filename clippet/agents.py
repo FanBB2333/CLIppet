@@ -34,6 +34,33 @@ class SeedSpec:
     scrub: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
+#: The API styles ``clippet env endpoint --api`` takes.
+API_STYLES: tuple[str, ...] = ("anthropic", "openai", "openai-responses", "gemini", "azure")
+
+
+@dataclass(frozen=True)
+class EndpointSpec:
+    """How the agent is pointed at an API other than its maker's service.
+
+    That is a relay, another provider's compatible API, or a local server.
+    *apis* are the styles it can speak there (the first is its default),
+    each with the variables that select it.  The other fields name the
+    agent's own variables: *base_url* takes the URL, *key* the key (CLIppet
+    sets the first, any of them counts), *model* the model.  *settings* is a
+    JSON file under HOME and keys the agent also needs there.  Codex and pi
+    read an endpoint from their own files (*file* says which way CLIppet
+    writes it); with no *apis* the agent takes one only from its own UI.
+    """
+
+    apis: dict[str, dict[str, str]] = field(default_factory=dict)
+    base_url: str = ""
+    key: tuple[str, ...] = ()
+    model: str = ""
+    settings: tuple[str, dict[str, Any]] | None = None
+    file: str = ""  # "codex": config.toml; "pi": models.json and settings.json
+    note: str = ""  # what else to know, said to people
+
+
 @dataclass(frozen=True)
 class AgentSpec:
     """One agent CLI."""
@@ -52,6 +79,7 @@ class AgentSpec:
     keychain: str = ""  # when its login can live outside HOME (an OS keychain), what to tell people
     runtime: tuple[str, ...] = ()  # what its own installation needs from the real HOME, linked into envs
     run_env: dict[str, str] = field(default_factory=dict)  # set for runs in an env (not in your real HOME)
+    endpoint: EndpointSpec = field(default_factory=EndpointSpec)  # how it reaches a third-party API
     letter: str = "?"  # its mark in the TUI's agent column
     color: str = "ink"  # its colour in the TUI (a palette key)
     examples: str = ""  # arguments worth showing as an example
@@ -104,6 +132,18 @@ _SPECS: tuple[AgentSpec, ...] = (
         ),
         resume=("resume", "{id}"),
         login="codex login",
+        # Interactive Codex reads no key from the environment (CODEX_API_KEY
+        # only in `codex exec`), but a custom provider's env_key it does.
+        endpoint=EndpointSpec(
+            apis={"openai-responses": {}},
+            key=("CLIPPET_CODEX_API_KEY",),
+            file="codex",
+            note=(
+                "Written to the env's config.toml as model_provider \"clippet\" (Responses API), whose key "
+                "Codex reads from CLIPPET_CODEX_API_KEY. An API-key login imported with a base URL uses "
+                "openai_base_url there instead."
+            ),
+        ),
         letter="X",
         color="ok",
         examples="e.g. resume --last   or   -m gpt-5.5",
@@ -194,6 +234,20 @@ _SPECS: tuple[AgentSpec, ...] = (
         # Its native installer updates itself under ~/.local; in an env that
         # would download a copy of Claude Code into the env that nothing runs.
         run_env={"DISABLE_AUTOUPDATER": "1"},
+        endpoint=EndpointSpec(
+            apis={"anthropic": {}},
+            base_url="ANTHROPIC_BASE_URL",
+            # AUTH_TOKEN goes out as "Authorization: Bearer" and asks nothing;
+            # an ANTHROPIC_API_KEY Claude Code first asks you to approve
+            key=("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"),
+            model="ANTHROPIC_MODEL",
+            note=(
+                "The endpoint must speak Anthropic's Messages API. ANTHROPIC_DEFAULT_OPUS_MODEL, "
+                "ANTHROPIC_DEFAULT_SONNET_MODEL and ANTHROPIC_DEFAULT_HAIKU_MODEL map Claude Code's model "
+                "names to the endpoint's (set them with clippet env vars). An \"env\" block in the env's "
+                ".claude/settings.json overrides these variables."
+            ),
+        ),
         letter="C",
         color="plum",
         examples="e.g. --continue   or   --model sonnet",
@@ -231,6 +285,13 @@ _SPECS: tuple[AgentSpec, ...] = (
             "GOOGLE_GENAI_USE_VERTEXAI",
         ),
         login="/auth",
+        endpoint=EndpointSpec(
+            apis={"gemini": {}},
+            base_url="GOOGLE_GEMINI_BASE_URL",
+            key=("GEMINI_API_KEY",),
+            model="GEMINI_MODEL",
+            note="Gemini CLI uses GEMINI_API_KEY once /auth (or settings.json) selects \"Use Gemini API key\".",
+        ),
         letter="G",
         color="brand",
         examples="e.g. -m gemini-2.5-pro",
@@ -301,6 +362,12 @@ _SPECS: tuple[AgentSpec, ...] = (
         ),
         resume=("-r", "{id}"),
         login="/login",
+        endpoint=EndpointSpec(
+            note=(
+                "Qoder CLI takes custom models (BYOK, also with a custom URL) only from the Custom tab of "
+                "/model; open Qoder CLI in the env and add one there. They are kept in the env."
+            ),
+        ),
         letter="Q",
         color="info",
         examples="e.g. -c   or   --model performance",
@@ -403,6 +470,15 @@ _SPECS += (
         # The launcher of pi's own installer looks for the Node.js it installed
         # under $HOME/.local/share/pi-node.
         runtime=(".local/share/pi-node",),
+        endpoint=EndpointSpec(
+            apis={"openai": {}, "openai-responses": {}, "anthropic": {}, "gemini": {}},
+            key=("CLIPPET_PI_API_KEY",),
+            file="pi",
+            note=(
+                "Written to the env's models.json as provider \"clippet\" (its key read from "
+                "CLIPPET_PI_API_KEY) and made the default in settings.json."
+            ),
+        ),
         letter="π",
         color="rose",
         examples="e.g. --model sonnet:high   or   -c",
@@ -472,6 +548,21 @@ _SPECS += (
         # The ~200 MB package it unpacks on first run, and its updates, live in
         # the cache; sharing it spares every env its own copy.
         runtime=("Library/Caches/copilot", ".cache/copilot"),
+        endpoint=EndpointSpec(
+            apis={
+                "openai": {"COPILOT_PROVIDER_TYPE": "openai"},
+                "openai-responses": {"COPILOT_PROVIDER_TYPE": "openai", "COPILOT_PROVIDER_WIRE_API": "responses"},
+                "anthropic": {"COPILOT_PROVIDER_TYPE": "anthropic"},
+                "azure": {"COPILOT_PROVIDER_TYPE": "azure"},
+            },
+            base_url="COPILOT_PROVIDER_BASE_URL",
+            key=("COPILOT_PROVIDER_API_KEY", "COPILOT_PROVIDER_API_KEY_COMMAND"),
+            model="COPILOT_MODEL",
+            note=(
+                "Copilot CLI needs a model for its own provider. A providers.json in the env takes precedence "
+                "over these variables; with COPILOT_OFFLINE=true it contacts no GitHub server and needs no login."
+            ),
+        ),
         letter="P",
         color="teal",
         examples="e.g. --model claude-sonnet-5.5   or   --continue",
@@ -524,6 +615,17 @@ _SPECS += (
         # its binary is shared (~/.local/bin/agy) but each HOME has its own
         # update lock, so envs could rewrite it at the same time
         run_env={"AGY_CLI_DISABLE_AUTO_UPDATE": "true"},
+        endpoint=EndpointSpec(
+            apis={"gemini": {}},
+            base_url="GOOGLE_GEMINI_BASE_URL",
+            key=("GEMINI_API_KEY",),
+            settings=(".gemini/antigravity-cli/settings.json", {"modelProvider": "gemini"}),
+            note=(
+                "Antigravity CLI reads the key only from GEMINI_API_KEY, and only with modelProvider \"gemini\" "
+                "in its settings.json (CLIppet sets both). A model of the endpoint goes in customModelsConfig as "
+                "gemini-api://<base url>/models/<model>."
+            ),
+        ),
         letter="A",
         color="gold",
         examples="e.g. -c   or   --model <a slug that agy models lists>",

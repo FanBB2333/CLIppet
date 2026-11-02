@@ -237,6 +237,59 @@ def update_environment(name: str, **fields: Any) -> dict:
     return envs[name]
 
 
+def env_vars(profile: dict, agent: str) -> dict[str, str]:
+    """The variables an env sets for *agent*'s runs, as stored (``${NAME}`` unresolved)."""
+
+    stored = profile.get("vars")
+    values = stored.get(agent) if isinstance(stored, dict) else None
+    if not isinstance(values, dict):
+        return {}
+    return {str(key): str(value) for key, value in values.items()}
+
+
+def set_env_vars(
+    name: str,
+    agent: str,
+    assign: dict[str, str] | None = None,
+    unset: list[str] | tuple[str, ...] = (),
+) -> dict[str, str]:
+    """Set (*assign*) and remove (*unset*) variables env *name* sets for *agent*; returns them all."""
+
+    envs = load_environments()
+    if name not in envs:
+        raise KeyError(f"Environment '{name}' not found.")
+    profile = envs[name]
+    stored = profile.get("vars") if isinstance(profile.get("vars"), dict) else {}
+    values = env_vars(profile, agent)
+    for key in unset:
+        values.pop(key, None)
+    values.update(assign or {})
+    stored = {key: value for key, value in stored.items() if key != agent}
+    if values:
+        stored[agent] = dict(sorted(values.items()))
+    if stored:
+        profile["vars"] = stored
+    else:
+        profile.pop("vars", None)
+    save_environments(envs)
+    return values
+
+
+def profile_for_home(home_dir: Path | str) -> tuple[str, dict] | None:
+    """The registered HOME env whose directory is *home_dir*, as ``(name, profile)``."""
+
+    target = Path(home_dir).expanduser().resolve()
+    try:
+        envs = load_environments()
+    except EnvironmentRegistryError:
+        return None
+    for name, profile in envs.items():
+        home = profile.get("home_dir")
+        if entry_type(profile) == ENV_TYPE_HOME and home and Path(home).expanduser().resolve() == target:
+            return name, profile
+    return None
+
+
 def add_environment(
     name: str,
     config_path: str | Path,
@@ -573,6 +626,9 @@ def clone_home_env(
     entry = _new_home_entry(dst_home, description, list(shared_entries(profile)))
     if with_auth and isinstance(profile.get("codex_source"), dict):
         entry["codex_source"] = dict(profile["codex_source"])
+    if with_auth and isinstance(profile.get("vars"), dict):
+        # an endpoint and its key are the env's login too
+        entry["vars"] = json.loads(json.dumps(profile["vars"]))
     envs[dst] = entry
     save_environments(envs)
     return dst_home
@@ -647,7 +703,15 @@ def read_env_codex_credential(home_dir: Path | str):
         credentials = load_codex_credentials(path)
     except (CredentialFormatError, ValueError, OSError):
         return None
-    return credentials[0] if credentials else None
+    if not credentials:
+        return None
+    credential = credentials[0]
+    if credential.auth_mode == "apikey" and not credential.base_url:
+        # an API-key login's endpoint lives in the env's config.toml
+        from clippet.endpoints import codex_base_url
+
+        credential.base_url = codex_base_url(home_dir)
+    return credential
 
 
 def write_env_codex_credential(home_dir: Path | str, credential) -> Path:
@@ -720,6 +784,11 @@ def import_codex_credential(
         created = True
 
     write_env_codex_credential(home_dir, credential)
+    if credential.auth_mode == "apikey" and credential.base_url:
+        # auth.json has no place for it; Codex reads it from config.toml
+        from clippet.endpoints import set_codex_base_url
+
+        set_codex_base_url(home_dir, credential.base_url)
     update_environment(name, codex_source=_source_record(source, credential, linked=link))
     return home_dir, created
 

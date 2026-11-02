@@ -116,7 +116,7 @@ New envs also **link** (not copy) `~/.gitconfig` and `~/.config/git` from your r
 clippet env list                     # envs with the Codex account each one carries
 clippet env status [name]            # detailed identity: account, plan, token expiry, source
 clippet env path work                # print the HOME path
-clippet env clone work scratch       # duplicate (sessions included, logins only with --with-auth)
+clippet env clone work scratch       # duplicate (sessions included; logins, endpoints and their keys only with --with-auth)
 clippet env remove scratch           # unregister, keep the directory
 clippet env remove scratch --purge   # also delete ~/.clippet/envs/scratch/
 ```
@@ -192,7 +192,7 @@ Interactive launches only add the flags you configured — CLIppet does not inje
 
 ### 3.4 How isolation works (and its limits)
 
-- `$HOME` points at the env (or a temp dir). Variables that would redirect an agent elsewhere are removed from the inherited environment: for example `CODEX_HOME`, `OPENAI_API_KEY` (Codex), `ANTHROPIC_*`, `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN` (Claude), `GEMINI_API_KEY`, `GOOGLE_*` credentials (Gemini, Antigravity), `GH_TOKEN`, `COPILOT_PROVIDER_*` (Copilot), `QODER_*` tokens (Qoder), the provider keys pi reads, and `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_STATE_HOME` / `XDG_CACHE_HOME`; the full lists are in `clippet/agents.py`. Values from your credential file or `env_overrides` are applied afterwards. Opt out in Python with `IsolationConfig(scrub_agent_env=False)`.
+- `$HOME` points at the env (or a temp dir). Variables that would redirect an agent elsewhere are removed from the inherited environment: for example `CODEX_HOME`, `OPENAI_API_KEY` (Codex), `ANTHROPIC_*`, `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN` (Claude), `GEMINI_API_KEY`, `GOOGLE_*` credentials (Gemini, Antigravity), `GH_TOKEN`, `COPILOT_PROVIDER_*` (Copilot), `QODER_*` tokens (Qoder), the provider keys pi reads, and `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_STATE_HOME` / `XDG_CACHE_HOME`; the full lists are in `clippet/agents.py`. Values from your credential file, the env's own variables (§3.6) or `env_overrides` are applied afterwards. Opt out in Python with `IsolationConfig(scrub_agent_env=False)`.
 - In an env (not in your real HOME) Claude Code and Antigravity CLI run with their self-updaters off, so no env downloads its own copy of the binary. pi's own Node.js and Copilot CLI's unpacked package are linked into envs from your real HOME instead of being installed per env.
 - Some agents keep their login in the OS keychain, which a `$HOME` does not separate. On macOS they look for the login keychain under `$HOME` and find none under an env's: Copilot CLI and Antigravity CLI then keep the login in a file inside the env (Copilot asks first: answer `y`), and Claude Code may do the same (not verified with a real Claude account). If macOS says a keychain cannot be found, choose **Cancel**, never "Reset To Defaults". On Linux desktops and Windows the envs share one keyring for those agents. Qoder CLI and pi keep their logins in files.
 - When CLIppet injects a Codex `auth.json`, it also passes `-c cli_auth_credentials_store="file"` so a `config.toml` that selects the OS keyring cannot hide it.
@@ -207,6 +207,37 @@ A short name for an existing config file. CLIppet copies that one file into a fr
 clippet env add mycodex /path/to/auth.json
 clippet -e mycodex -p "say hi"
 ```
+
+### 3.6 Third-party APIs (relays, compatible providers, local models)
+
+Every agent can be pointed at an API other than its maker's; CLIppet does it per env and per agent, in the agent's own way:
+
+```bash
+export RELAY_KEY=...                     # e.g. in ~/.secrets.zsh; CLIppet stores only the name
+clippet env create relay
+clippet env endpoint relay claude  https://relay.example.com/anthropic --key-env RELAY_KEY --model kimi-k2
+clippet env endpoint relay codex   https://relay.example.com/v1 --key-env RELAY_KEY --model gpt-5.5
+clippet env endpoint relay pi      http://127.0.0.1:11434/v1 --model qwen3:8b          # no key: a local server
+clippet env endpoint relay copilot https://relay.example.com/v1 --api openai-responses --key-env RELAY_KEY --model gpt-5.5
+clippet env endpoint relay agy     https://gemini-proxy.example.com --key-env GEMINI_KEY
+clippet env endpoint relay           # what each agent in the env uses
+clippet env endpoint relay claude --clear
+```
+
+| Agent | How CLIppet points it at the endpoint | API styles |
+|-------|---------------------------------------|------------|
+| Claude Code | `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_MODEL` | Anthropic Messages |
+| Codex | `config.toml`: `model_provider = "clippet"` and `[model_providers.clippet]` (`base_url`, `env_key`) | Responses |
+| Gemini CLI | `GOOGLE_GEMINI_BASE_URL`, `GEMINI_API_KEY`, `GEMINI_MODEL` | Gemini |
+| Antigravity CLI | `GOOGLE_GEMINI_BASE_URL`, `GEMINI_API_KEY`, and `modelProvider: "gemini"` in its `settings.json` | Gemini |
+| Copilot CLI | `COPILOT_PROVIDER_BASE_URL`, `COPILOT_PROVIDER_TYPE` (+ `WIRE_API`), `COPILOT_PROVIDER_API_KEY`, `COPILOT_MODEL` | OpenAI, OpenAI Responses, Anthropic, Azure |
+| pi | `models.json`: provider `clippet` (`baseUrl`, `api`, `apiKey`), made the default in `settings.json` | OpenAI, OpenAI Responses, Anthropic, Gemini |
+| Qoder CLI | only its own `/model` → Custom tab (BYOK with a custom URL); run it in the env and add one there | — |
+
+- **Keys stay out of files.** `--key-env VAR` stores `${VAR}`; CLIppet reads `$VAR` from its own environment at each launch and stops with a clear message when it is unset. `clippet env vars ENV AGENT 'NAME=${VAR}'` sets any other variable the same way (quote it so the shell does not expand it), e.g. Claude Code's `ANTHROPIC_DEFAULT_SONNET_MODEL`; `--unset NAME` removes one.
+- These variables are applied **after** CLIppet drops the inherited ones that would change an agent's identity, so an env never runs on the parent shell's key by accident. In `base` (your real HOME) nothing is dropped: the variables of your shell apply as they are.
+- An endpoint the agent itself names is honored too: an `env` block in the env's `.claude/settings.json`, Codex's `openai_base_url` (written when you `clippet env import` an API-key credential with a base URL), a `providers.json` for Copilot, a `.gemini/.env`. The TUI shows each agent's endpoint, model and key source in the env detail and before every launch.
+- Single-file mode keeps working for one-off runs: `clippet -c claude-settings.json` with an `env` block, a Codex API-key credential with a base URL, or a Gemini `.env`.
 
 ---
 
@@ -290,6 +321,7 @@ CLIppet solves all of this with a single `adapter.run(request)` call — and the
 - **Parallel Orchestration** — `ClippetRunner` dispatches multiple agents concurrently via thread pool or asyncio
 - **Terminal UI** — `clippet tui`: envs, accounts, streamed runs (one prompt in many envs), project pins and checks
 - **Live output** — `run_async(request, on_output=...)` streams each line while the agent works; the TUI turns every agent's events into steps as they arrive
+- **Third-party APIs** — per env and per agent, `clippet env endpoint` points any agent at a relay, a compatible provider or a local server; keys stay in your shell
 - **Declarative Config** — YAML/JSON-based adapter registration with credential profiles; per-project `.clippet.json`
 - **Built-in Adapters** — Codex, Claude Code, Gemini CLI, Qoder CLI, pi, GitHub Copilot CLI and Google Antigravity CLI out of the box; extensible via `BaseSubprocessAdapter` and one entry in `clippet/agents.py`
 
@@ -560,7 +592,8 @@ clippet/
 │   └── personas.py      # Persona prompts and skill blocks
 ├── parsers/
 │   └── extractors.py    # JSON/text output parsers
-├── agents.py            # What differs between the agent CLIs: files, logins, variables, resume
+├── agents.py            # What differs between the agent CLIs: files, logins, variables, resume, endpoints
+├── endpoints.py         # Third-party API endpoints per env and agent
 ├── isolation.py         # Sandbox environments, credential providers, env scrubbing
 ├── models.py            # AgentRequest, AgentResult, IsolationConfig, ToolCallRecord
 └── protocols.py         # ClippetAdapter protocol

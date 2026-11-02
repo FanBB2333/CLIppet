@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import signal
 import subprocess
 import sys
@@ -29,7 +30,7 @@ from clippet.adapters.base import (
     build_credential_set,
     create_isolated_environment,
 )
-from clippet.agents import AGENT_KEYS, AGENTS, agent_list, agent_spec
+from clippet.agents import AGENT_KEYS, AGENTS, API_STYLES, agent_list, agent_spec
 from clippet.auth.codex import (
     CodexCredential,
     CredentialFormatError,
@@ -49,11 +50,13 @@ from clippet.config.environments import (
     clone_home_env,
     create_home_env_with_report,
     entry_type,
+    env_vars,
     get_environment,
     import_codex_credential,
     list_environments,
     read_env_codex_credential,
     remove_environment,
+    set_env_vars,
     shared_entries,
     sync_linked_codex_credential,
 )
@@ -417,6 +420,40 @@ def _add_env_subcommands(parser: argparse.ArgumentParser) -> None:
         help="Print the on-disk path of an env (HOME dir or config file)",
     )
     path_p.add_argument("name", help="Env name")
+
+    endpoint = sub.add_parser(
+        "endpoint",
+        help="Point an agent in an env at a third-party API (a relay, a compatible provider, a local server)",
+        description=(
+            "Point AGENT in env NAME at the API at URL, the agent's own way (variables, or its "
+            "config.toml/models.json for Codex and pi). Without AGENT, show the env's endpoints."
+        ),
+    )
+    endpoint.add_argument("name", help="Env name")
+    endpoint.add_argument("agent", nargs="?", help=f"One of: {agent_list()}")
+    endpoint.add_argument("url", nargs="?", help="The endpoint's base URL")
+    endpoint.add_argument(
+        "--key-env",
+        metavar="VAR",
+        help="The variable of your environment that holds the key (read at each launch, never stored)",
+    )
+    endpoint.add_argument("--model", help="The model to use there")
+    endpoint.add_argument("--api", choices=API_STYLES, help="The API style the endpoint speaks (default: the agent's)")
+    endpoint.add_argument("--clear", action="store_true", help="Stop using a third-party endpoint for AGENT")
+
+    env_vars_p = sub.add_parser(
+        "vars",
+        help="Show or set the variables an env sets for an agent's runs",
+        description=(
+            "Variables set for AGENT's runs in env NAME, after CLIppet drops inherited ones that would "
+            "change its identity. A value may name a variable of your environment as ${NAME} (quote it), "
+            "so keys can stay in your shell profile."
+        ),
+    )
+    env_vars_p.add_argument("name", help="Env name")
+    env_vars_p.add_argument("agent", nargs="?", help=f"One of: {agent_list()}")
+    env_vars_p.add_argument("assign", nargs="*", metavar="VAR=VALUE", help="Variables to set")
+    env_vars_p.add_argument("--unset", action="append", default=[], metavar="VAR", help="A variable to remove")
 
     rm = sub.add_parser("remove", help="Unregister an env")
     rm.add_argument("name", help="Name of the environment to remove")
@@ -1298,10 +1335,114 @@ def _dispatch_env(args: argparse.Namespace) -> None:
         print(f"Environment '{name}' removed{suffix}.")
         return
 
+    if action == "endpoint":
+        _env_endpoint(args)
+        return
+
+    if action == "vars":
+        _env_vars(args)
+        return
+
     _fail(
         "specify an env action: list, create, import, status, sync, add, clone, "
-        "path, or remove."
+        "path, endpoint, vars, or remove."
     )
+
+
+def _home_env_or_fail(name: str) -> dict:
+    try:
+        profile = get_environment(name)
+    except KeyError as exc:
+        _fail(str(exc.args[0] if exc.args else exc))
+    if entry_type(profile) != ENV_TYPE_HOME:
+        _fail(f"env '{name}' is a config-file alias; endpoints and variables are kept in HOME envs")
+    return profile
+
+
+def _agent_or_fail(agent: str) -> str:
+    spec = agent_spec(agent)
+    if spec is None:
+        _fail(f"unknown agent '{agent}'; use one of {agent_list()}")
+    return spec.key
+
+
+def _env_endpoint(args: argparse.Namespace) -> None:
+    from clippet.endpoints import clear_endpoint, endpoint_of, set_endpoint
+
+    profile = _home_env_or_fail(args.name)
+    home = Path(profile.get("home_dir") or "")
+    if not args.agent:
+        for key, spec in AGENTS.items():
+            found = endpoint_of(home, key, env_vars(profile, key))
+            if found is not None:
+                print(_endpoint_line(spec.title, found))
+        if not any(endpoint_of(home, key, env_vars(profile, key)) for key in AGENTS):
+            print(f"env '{args.name}': every agent uses its maker's API")
+        return
+
+    agent = _agent_or_fail(args.agent)
+    spec = AGENTS[agent]
+    try:
+        if args.clear:
+            clear_endpoint(args.name, agent)
+            print(f"env '{args.name}': {spec.title} uses its maker's API again")
+            return
+        if not args.url:
+            found = endpoint_of(home, agent, env_vars(profile, agent))
+            print(_endpoint_line(spec.title, found) if found else f"{spec.title}: its maker's API")
+            if spec.endpoint.note:
+                print(f"  {spec.endpoint.note}")
+            return
+        notes = set_endpoint(args.name, agent, args.url, key_env=args.key_env, model=args.model, api=args.api)
+    except (KeyError, ValueError, OSError) as exc:
+        _fail(str(exc.args[0] if isinstance(exc, KeyError) and exc.args else exc))
+    found = endpoint_of(home, agent)
+    print(f"env '{args.name}': " + (_endpoint_line(spec.title, found) if found else f"{spec.title} → {args.url}"))
+    if not args.key_env:
+        print("  no key: add --key-env VAR if the endpoint wants one")
+    for note in notes:
+        print(f"  {note}")
+
+
+def _endpoint_line(title: str, endpoint) -> str:
+    parts = [f"{title} → {endpoint.url}"]
+    if endpoint.model:
+        parts.append(f"model {endpoint.model}")
+    if endpoint.key:
+        parts.append(f"key {endpoint.key}")
+    return ", ".join(parts) + (f"  ({endpoint.source})" if endpoint.source else "")
+
+
+def _env_vars(args: argparse.Namespace) -> None:
+    from clippet.endpoints import is_secret, references, shown
+
+    profile = _home_env_or_fail(args.name)
+    agents = [_agent_or_fail(args.agent)] if args.agent else list(AGENTS)
+    if args.agent and (args.assign or args.unset):
+        assign: dict[str, str] = {}
+        for item in args.assign:
+            key, sep, value = item.partition("=")
+            if not sep or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
+                _fail(f"expected VAR=VALUE, got {item!r}")
+            assign[key] = value
+            if value and is_secret(key) and not references(value):
+                _note(f"{key} is kept in plain text in environments.json; "
+                      f"'{key}=${{VAR}}' would read it from your environment instead")
+        try:
+            set_env_vars(args.name, agents[0], assign, args.unset)
+        except KeyError as exc:
+            _fail(str(exc.args[0] if exc.args else exc))
+        profile = get_environment(args.name)
+    elif args.assign or args.unset:
+        _fail("name the agent whose variables to change")
+    shown_any = False
+    for agent in agents:
+        values = env_vars(profile, agent)
+        for key, value in values.items():
+            print(f"{agent}  {key}={shown(key, value)}")
+            shown_any = True
+    if not shown_any:
+        print(f"env '{args.name}' sets no variables" + (f" for {agents[0]}" if args.agent else ""))
 
 
 def _normalized_source(source: str) -> str:

@@ -172,6 +172,17 @@ class Launch(ModalScreen[tuple[str, list[str]] | None]):
         p, env = self.pal, self.env
         if env.kind == "file":
             return Text(f"the credential file {short_path(env.path)}", style=p["ink"])
+        endpoint = env.endpoint(self.agent)
+        if endpoint is not None:
+            text = Text(f"API @ {endpoint.url}", style=f"bold {p['ink']}")
+            if endpoint.model:
+                text.append(f"  {endpoint.model}", style=p["brand"])
+            text.append(f"\nkey {endpoint.key}" if endpoint.key else "\nno key", style=p["muted"])
+            missing = env.unset_references(self.agent)
+            if missing:
+                text.append(f"\n{', '.join('$' + name for name in missing)} is not set here: it cannot start",
+                            style=p["bad"])
+            return text
         if self.agent != "codex":
             who = login_of(env.path, self.agent)
             text = Text(who or f"{self.agent}'s own login in this HOME",

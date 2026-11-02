@@ -418,3 +418,31 @@ def test_clippet_tui_is_a_subcommand() -> None:
 
     args = _build_parser().parse_args(["tui", "/tmp"])
     assert args.command == "tui" and args.workspace == "/tmp"
+
+
+def test_an_env_on_a_third_party_api_says_so_before_launching(world, monkeypatch) -> None:
+    from clippet.endpoints import set_endpoint
+    from clippet.tui.views.envs import EnvsPlace
+    from clippet.tui.views.launch import Launch
+
+    monkeypatch.delenv("RELAY_KEY", raising=False)
+    set_endpoint("alice", "claude", "https://relay.example.com/anthropic", key_env="RELAY_KEY", model="kimi-k2")
+
+    async def scenario() -> None:
+        app = _app(world)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            detail = str(app.screen.query_one(EnvsPlace).detail(app.env_named("alice")).renderables)
+            assert "https://relay.example.com/anthropic" in detail and "$RELAY_KEY not set" in detail
+            await pilot.press("enter")
+            await pilot.press("tab")  # claude
+            assert isinstance(app.screen, Launch)
+            facts = app.screen.summary()
+            assert "API @ https://relay.example.com/anthropic" in facts and "kimi-k2" in facts
+            assert "$RELAY_KEY is not set here" in facts
+            monkeypatch.setenv("RELAY_KEY", "sk-test")
+            app.screen.paint()
+            assert "not set here" not in app.screen.summary() and "sk-test" not in app.screen.summary()
+            await pilot.press("escape")
+
+    asyncio.run(scenario())
