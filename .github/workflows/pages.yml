@@ -1,0 +1,52 @@
+name: Publish website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - "resources/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the website source
+        uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      # The page loads its drawings from ../resources/ so that it also opens
+      # straight from a checkout; on Pages they sit next to it.
+      - name: Assemble the site
+        run: |
+          mkdir -p _site/resources
+          cp -a website/. _site/
+          cp resources/*.svg _site/resources/
+          sed -i 's#\.\./resources/#resources/#g' _site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish the website
+        id: deployment
+        uses: actions/deploy-pages@v4

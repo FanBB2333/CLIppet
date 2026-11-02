@@ -608,6 +608,8 @@ pytest
 
 The drawings in `resources/` are generated: `python scripts/draw_art.py` traces every shape with a seeded wobble (after papertown's `hand.ts`) and letters in LXGW WenKai GB Lite (SIL OFL 1.1) as outlines, so the same seeds always give the same pictures. It needs `fonttools` and the font file (`--font PATH`; TeX Live ships one).
 
+The product page is `website/index.html`, one file that also opens straight from disk. `python scripts/build_site.py` rewrites the parts of it that are generated, the mark (themed from `resources/logo.svg`) and a Latin subset of the same font as WOFF2, and `--check` reports a stale page; it needs `fonttools` and `brotli`. Pushes to `main` that touch `website/` or `resources/` publish it to GitHub Pages (`.github/workflows/pages.yml`).
+
 ---
 
 ## 16. License
