@@ -97,7 +97,7 @@ class TestHomeEnv:
 
     def test_create_home_env_empty(self) -> None:
         """create_home_env without --from-current makes an empty HOME dir."""
-        home_dir = create_home_env("work")
+        home_dir = create_home_env("work", share=[])
         assert home_dir.is_dir()
         assert home_dir == env_home_path("work")
         # Empty: no .claude/.codex/.gemini inside
@@ -110,18 +110,36 @@ class TestHomeEnv:
     def test_create_home_env_seeded(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """--from-current copies ~/.claude and ~/.codex into the new env."""
+        """--from-current copies agent configuration but not credentials."""
         fake_home = tmp_path / "fake-home"
         (fake_home / ".claude").mkdir(parents=True)
         (fake_home / ".claude" / "settings.json").write_text('{"k":1}')
         (fake_home / ".codex").mkdir()
         (fake_home / ".codex" / "auth.json").write_text("{}")
+        (fake_home / ".codex" / "config.toml").write_text('model = "m"\n')
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
 
         home_dir = create_home_env("seeded", from_current=True)
 
         assert (home_dir / ".claude" / "settings.json").read_text() == '{"k":1}'
-        assert (home_dir / ".codex" / "auth.json").exists()
+        assert (home_dir / ".codex" / "config.toml").exists()
+        # OAuth credentials are not copied unless explicitly requested
+        assert not (home_dir / ".codex" / "auth.json").exists()
+
+    def test_create_home_env_seeded_with_auth(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """with_auth=True also copies credential files (0600)."""
+        fake_home = tmp_path / "fake-home"
+        (fake_home / ".codex").mkdir(parents=True)
+        (fake_home / ".codex" / "auth.json").write_text("{}")
+        monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
+
+        home_dir = create_home_env("authed", from_current=True, with_auth=True)
+
+        auth = home_dir / ".codex" / "auth.json"
+        assert auth.exists()
+        assert (auth.stat().st_mode & 0o777) == 0o600
 
     def test_create_home_env_seeds_qodercli(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -198,14 +216,16 @@ class TestHomeEnv:
         """--agents restricts which subtrees are seeded."""
         fake_home = tmp_path / "fake-home"
         (fake_home / ".claude").mkdir(parents=True)
+        (fake_home / ".claude" / "settings.json").write_text("{}")
         (fake_home / ".codex").mkdir()
+        (fake_home / ".codex" / "config.toml").write_text("")
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: fake_home))
 
         home_dir = create_home_env(
             "partial", from_current=True, agents=["claude"]
         )
 
-        assert (home_dir / ".claude").exists()
+        assert (home_dir / ".claude" / "settings.json").exists()
         assert not (home_dir / ".codex").exists()
 
     def test_create_home_env_existing_without_overwrite(self) -> None:
@@ -226,10 +246,10 @@ class TestHomeEnv:
                 create_home_env(bad)
 
     def test_clone_home_env(self) -> None:
-        src_home = create_home_env("base")
+        src_home = create_home_env("origin")
         (src_home / "marker").write_text("hi")
 
-        dst_home = clone_home_env("base", "copy")
+        dst_home = clone_home_env("origin", "copy")
 
         assert dst_home != src_home
         assert (dst_home / "marker").read_text() == "hi"
@@ -258,3 +278,10 @@ class TestHomeEnv:
         """Old entries with no 'type' field still resolve correctly."""
         assert entry_type({"config_path": "/x"}) == ENV_TYPE_FILE
         assert entry_type({"home_dir": "/x"}) == ENV_TYPE_HOME
+
+
+def test_clippet_home_env_var_relocates_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.undo()  # drop the autouse redirect for this test
+    monkeypatch.setenv("CLIPPET_HOME", str(tmp_path / "state"))
+    assert env_mod.get_clippet_root() == tmp_path / "state"
+    assert env_mod.get_envs_root() == tmp_path / "state" / "envs"

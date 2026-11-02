@@ -1,11 +1,13 @@
 """Config file format detection and adapter creation for CLIppet.
 
-Supports four input types for ``-c``:
+Supports these input types for ``-c``:
 1. A CLIppet composite JSON/YAML file (has ``adapters`` list).
-2. A native agent config file (Claude Code JSON, Codex JSON, or Gemini .env).
-3. A **directory** path — treated as a "second home" that is used directly
+2. A native agent config file (Claude Code JSON or Gemini .env).
+3. A Codex credential in any format understood by :mod:`clippet.auth.codex`
+   (Codex ``auth.json``, Cockpit Tools export, sub2api export, CLIProxyAPI
+   token file, plain token bundle, JSON arrays / JSON Lines of those).
+4. A **directory** path — treated as a "second home" that is used directly
    as ``$HOME`` for the launched agent.
-4. A Gemini .env file (contains GEMINI_API_KEY or GOOGLE_GEMINI_BASE_URL).
 """
 
 from __future__ import annotations
@@ -16,12 +18,27 @@ import re
 from pathlib import Path
 from typing import Literal
 
+from pydantic import SecretStr
+
 from clippet.adapters.base import BaseAdapter, BaseSubprocessAdapter
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.adapters.codex import CodexAdapter
 from clippet.adapters.gemini import GeminiAdapter, parse_gemini_env_file
 from clippet.adapters.qodercli import QoderCLIAdapter
+from clippet.auth.codex import (
+    AUTH_MODE_APIKEY,
+    FORMAT_NATIVE,
+    CodexCredential,
+    _parse_text,
+    extract_codex_credentials,
+    load_codex_credentials,
+    select_credential,
+)
 from clippet.models import IsolationConfig
+
+#: ``-c`` override that makes Codex read the auth.json CLIppet injected even
+#: when the user's config.toml selects the OS keyring.
+CODEX_FILE_STORE_OVERRIDE = ("cli_auth_credentials_store", '"file"')
 
 _CLAUDE_CODE_KEYS = {"effortLevel", "skipDangerousModePermissionPrompt", "permissions"}
 
@@ -55,8 +72,12 @@ def detect_config_type(
 
     path = Path(path)
 
-    # --- Directory → second home -------------------------------------------
+    # --- Directory → Cockpit Tools data dir, or second home ----------------
     if path.is_dir():
+        from clippet.auth.cockpit import is_cockpit_dir
+
+        if is_cockpit_dir(path):
+            return "codex"
         return "second_home"
 
     # --- Check for .env file (Gemini format) -------------------------------
@@ -73,14 +94,28 @@ def detect_config_type(
     # --- Try to parse as JSON ----------------------------------------------
     try:
         with open(path, "r", encoding="utf-8") as f:
-            data: dict = json.load(f)
+            data = json.load(f)
     except json.JSONDecodeError:
         # Not valid JSON - might be a non-.env file with Gemini config
         content = path.read_text(encoding="utf-8")
         env_map = parse_gemini_env_file(content)
         if _GEMINI_ENV_KEYS & set(env_map.keys()):
             return "gemini"
+        # ... or a JSON Lines file of Codex credentials
+        try:
+            if extract_codex_credentials(_parse_text(content)):
+                return "codex"
+        except ValueError:
+            pass
         raise
+
+    if not isinstance(data, dict):
+        if extract_codex_credentials(data):
+            return "codex"
+        raise ValueError(
+            f"Unrecognizable config format in '{path}': top-level JSON value "
+            "is not an object and holds no Codex credentials."
+        )
 
     # CLIppet composite format: has an "adapters" list
     if isinstance(data.get("adapters"), list):
@@ -98,15 +133,17 @@ def detect_config_type(
     if _CLAUDE_CODE_KEYS & data.keys():
         return "claude_code"
 
-    # Codex format: OPENAI_API_KEY at top level
-    if "OPENAI_API_KEY" in data:
+    # Codex: native auth.json (API key or ChatGPT tokens) or any account
+    # manager export that carries Codex OAuth tokens.
+    if "OPENAI_API_KEY" in data or extract_codex_credentials(data):
         return "codex"
 
     raise ValueError(
         f"Unrecognizable config format in '{path}'. "
         "Expected a CLIppet composite config (with 'adapters' list), "
         "a Claude Code config (with 'env' containing ANTHROPIC_* keys), "
-        "a Codex config (with top-level 'OPENAI_API_KEY'), "
+        "a Codex credential (auth.json, Cockpit Tools / sub2api / CLIProxyAPI "
+        "export, or a token bundle), "
         "or a Gemini config (.env with GEMINI_API_KEY)."
     )
 
@@ -163,98 +200,170 @@ def create_adapter_from_claude_config(
 
 
 def _read_model_from_codex_toml(toml_path: Path) -> str | None:
-    """Extract the ``model`` value from a Codex ``config.toml``.
+    """Extract the top-level ``model`` value from a Codex ``config.toml``.
 
-    Uses a simple regex so we don't need a TOML parser dependency.
+    Keys inside tables (``[profiles.x]``, ``[model_providers.y]``) are ignored.
     """
 
     try:
         text = toml_path.read_text(encoding="utf-8")
-        match = re.search(r'^model\s*=\s*"([^"]+)"', text, re.MULTILINE)
+    except OSError:
+        return None
+
+    try:
+        import tomllib  # Python 3.11+
+    except ModuleNotFoundError:  # pragma: no cover - Python 3.10
+        tomllib = None
+
+    if tomllib is not None:
+        try:
+            model = tomllib.loads(text).get("model")
+        except tomllib.TOMLDecodeError:
+            model = None
+        return model if isinstance(model, str) and model else None
+
+    for line in text.splitlines():  # pragma: no cover - Python 3.10 fallback
+        stripped = line.strip()
+        if stripped.startswith("["):
+            break
+        match = re.match(r'^model\s*=\s*["\']([^"\']+)["\']', stripped)
         if match:
             return match.group(1)
-    except Exception:
-        pass
     return None
+
+
+def _refreshed_credential_path(credential: CodexCredential) -> Path:
+    """Where refreshed tokens of a converted (non-native) source are kept."""
+
+    from clippet.config.environments import get_clippet_root
+
+    who = credential.display_email or credential.display_account_id or "account"
+    slug = re.sub(r"[^A-Za-z0-9._@-]+", "_", who)
+    return get_clippet_root() / "refreshed" / f"{slug}.auth.json"
+
+
+def codex_isolation_for_credential(
+    credential: CodexCredential,
+    *,
+    source_is_single_native_file: bool,
+    config_toml: Path | None = None,
+) -> IsolationConfig:
+    """Build the isolation config that injects *credential* as auth.json."""
+
+    credential_files: dict[str, str] = {}
+    credential_contents: dict[str, SecretStr] = {}
+    sync_back: dict[str, str] = {}
+
+    if source_is_single_native_file and credential.source_path:
+        credential_files[".codex/auth.json"] = credential.source_path
+        sync_back[".codex/auth.json"] = credential.source_path
+    else:
+        credential_contents[".codex/auth.json"] = SecretStr(credential.to_auth_json_text())
+        if credential.auth_mode != AUTH_MODE_APIKEY:
+            sync_back[".codex/auth.json"] = str(_refreshed_credential_path(credential))
+
+    if config_toml is not None and config_toml.is_file():
+        credential_files[".codex/config.toml"] = str(config_toml)
+
+    env_overrides: dict[str, str] = {}
+    if credential.auth_mode == AUTH_MODE_APIKEY and credential.api_key:
+        # Custom providers may read the key via ``env_key = "OPENAI_API_KEY"``.
+        env_overrides["OPENAI_API_KEY"] = credential.api_key
+
+    return IsolationConfig(
+        credential_files=credential_files,
+        credential_contents=credential_contents,
+        sync_back=sync_back,
+        env_overrides=env_overrides,
+    )
 
 
 def create_adapter_from_codex_config(
     config_path: Path | str | None = None,
     config_toml_path: Path | str | None = None,
+    account: str | int | None = None,
     **adapter_kwargs,
 ) -> CodexAdapter:
     """Create a :class:`CodexAdapter` from Codex credential/config files.
 
     Supports three usage patterns:
 
-    * **auth.json only** (``config_path`` set): the ``config.toml`` is read
+    * **credential only** (``config_path`` set): the ``config.toml`` is read
       from the real ``~/.codex/config.toml`` if it exists.
-    * **config.toml only** (``config_toml_path`` set): the ``auth.json`` is
-      read from the real ``~/.codex/auth.json``.
-    * **Both files** (both set): both are copied into the sandbox.
+    * **config.toml only** (``config_toml_path`` set): the credential is read
+      from the real ``~/.codex/auth.json``.
+    * **Both files** (both set): both are injected into the sandbox.
+
+    The credential may be in any format understood by
+    :func:`clippet.auth.codex.load_codex_credentials` (Codex ``auth.json``,
+    Cockpit Tools export or live store, sub2api, CLIProxyAPI, token bundles).
+    Non-native formats are converted into Codex's ``auth.json``.
 
     Args:
-        config_path: Path to the Codex auth JSON file (typically
-            ``auth.json``).  When *None*, falls back to
+        config_path: Credential source.  When *None*, falls back to
             ``~/.codex/auth.json``.
         config_toml_path: Path to the Codex ``config.toml``.  When *None*,
             falls back to ``~/.codex/config.toml``.
+        account: Selector for sources holding several accounts (1-based
+            index, e-mail, e-mail local part, label or account id).
         **adapter_kwargs: Extra keyword arguments forwarded to
             :class:`CodexAdapter`.
 
-    Returns:
-        A configured :class:`CodexAdapter` instance.
-
     Raises:
-        FileNotFoundError: If neither an explicit nor a fallback auth file
+        FileNotFoundError: If neither an explicit nor a fallback credential
             can be located.
+        ValueError: If the source holds no usable credential, or the account
+            selection is missing/ambiguous.
     """
 
-    # --- Resolve auth.json --------------------------------------------------
+    # --- Resolve the credential source ------------------------------------
     if config_path is not None:
-        auth_path = Path(config_path).resolve()
+        source = str(config_path)
+        if not source.startswith("cockpit"):
+            source = str(Path(source).expanduser().resolve())
     else:
-        auth_path = Path.home() / ".codex" / "auth.json"
-        if not auth_path.is_file():
+        default_auth = Path.home() / ".codex" / "auth.json"
+        if not default_auth.is_file():
             raise FileNotFoundError(
                 "No auth.json provided and ~/.codex/auth.json does not exist."
             )
+        source = str(default_auth)
+
+    credentials = load_codex_credentials(source)
+    credential = select_credential(credentials, account)
 
     # --- Resolve config.toml ------------------------------------------------
     if config_toml_path is not None:
-        toml_path: Path | None = Path(config_toml_path).resolve()
+        toml_path: Path | None = Path(config_toml_path).expanduser().resolve()
     else:
         candidate = Path.home() / ".codex" / "config.toml"
         toml_path = candidate if candidate.is_file() else None
 
-    # --- Read auth.json and extract env vars --------------------------------
-    env_overrides: dict[str, str] = {}
-    if auth_path.is_file():
-        with open(auth_path, "r", encoding="utf-8") as f:
-            data: dict = json.load(f)
-        for key in ("OPENAI_API_KEY", "OPENAI_BASE_URL"):
-            if key in data:
-                env_overrides[key] = data[key]
-
-    credential_files: dict[str, str] = {
-        ".codex/auth.json": str(auth_path),
-    }
-
-    if toml_path is not None and toml_path.is_file():
-        credential_files[".codex/config.toml"] = str(toml_path)
-
-        # Read model from config.toml so the CLI --model flag is consistent
-        if "model" not in adapter_kwargs:
-            model = _read_model_from_codex_toml(toml_path)
-            if model:
-                adapter_kwargs["model"] = model
-
-    isolation = IsolationConfig(
-        credential_files=credential_files,
-        env_overrides=env_overrides,
+    single_native = (
+        len(credentials) == 1
+        and credential.source_format == FORMAT_NATIVE
+        and credential.source_path is not None
+    )
+    isolation = codex_isolation_for_credential(
+        credential,
+        source_is_single_native_file=single_native,
+        config_toml=toml_path,
     )
 
-    adapter = CodexAdapter(**adapter_kwargs)
+    if toml_path is not None and toml_path.is_file() and "model" not in adapter_kwargs:
+        model = _read_model_from_codex_toml(toml_path)
+        if model:
+            adapter_kwargs["model"] = model
+
+    overrides = dict(adapter_kwargs.pop("config_overrides", None) or {})
+    key, value = CODEX_FILE_STORE_OVERRIDE
+    overrides.setdefault(key, value)
+    if credential.auth_mode == AUTH_MODE_APIKEY and credential.base_url:
+        # Codex reads the built-in provider's endpoint from ``openai_base_url``
+        # (the OPENAI_BASE_URL environment variable is no longer consulted).
+        overrides.setdefault("openai_base_url", json.dumps(credential.base_url))
+
+    adapter = CodexAdapter(config_overrides=overrides, **adapter_kwargs)
     adapter.default_isolation = isolation
     return adapter
 
@@ -337,6 +446,13 @@ def create_adapter_with_second_home(
     if agent_type in ("claude", "claude_code"):
         adapter = ClaudeAdapter(**adapter_kwargs)
     elif agent_type == "codex":
+        if (Path(home_dir) / ".codex" / "auth.json").is_file():
+            # The env carries its login as a file; make sure a copied
+            # config.toml selecting the OS keyring cannot hide it.
+            overrides = dict(adapter_kwargs.pop("config_overrides", None) or {})
+            key, value = CODEX_FILE_STORE_OVERRIDE
+            overrides.setdefault(key, value)
+            adapter_kwargs["config_overrides"] = overrides
         adapter = CodexAdapter(**adapter_kwargs)
     elif agent_type == "gemini":
         adapter = GeminiAdapter(**adapter_kwargs)
@@ -361,6 +477,7 @@ def create_adapter_from_config_file(
     config_path: Path | str | None = None,
     agent_type: str | None = None,
     codex_config_path: Path | str | None = None,
+    account: str | int | None = None,
 ) -> BaseSubprocessAdapter:
     """Create an adapter from a standalone config file **or** directory.
 
@@ -379,6 +496,8 @@ def create_adapter_from_config_file(
         codex_config_path: Optional path to a Codex ``config.toml`` file.
             When provided together with a Codex *config_path* (or on its
             own), both files are wired into the sandbox.
+        account: Account selector for Codex sources that hold several
+            accounts (Cockpit / sub2api exports, ...).
 
     Returns:
         A configured adapter instance.
@@ -394,11 +513,21 @@ def create_adapter_from_config_file(
         return create_adapter_from_codex_config(
             config_path=None,
             config_toml_path=codex_config_path,
+            account=account,
         )
 
     if config_path is None:
         raise ValueError(
             "Either -c/--config or --codex-config must be provided."
+        )
+
+    if str(config_path) == "cockpit" or str(config_path).startswith("cockpit:"):
+        if agent_type not in (None, "codex"):
+            raise ValueError("Cockpit Tools sources only provide Codex accounts.")
+        return create_adapter_from_codex_config(
+            config_path=str(config_path),
+            config_toml_path=codex_config_path,
+            account=account,
         )
 
     detected = detect_config_type(config_path)
@@ -431,6 +560,7 @@ def create_adapter_from_config_file(
         return create_adapter_from_codex_config(
             config_path=config_path,
             config_toml_path=codex_config_path,
+            account=account,
         )
 
     if effective_type == "gemini":

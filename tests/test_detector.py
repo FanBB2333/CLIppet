@@ -141,7 +141,12 @@ class TestCreateAdapterFromCodexConfig:
         assert ".codex/auth.json" in iso.credential_files
         assert iso.credential_files[".codex/auth.json"] == str(codex_config.resolve())
         assert iso.env_overrides["OPENAI_API_KEY"] == "sk-openai-test"
-        assert iso.env_overrides["OPENAI_BASE_URL"] == "https://api.openai.com"
+        # Codex reads the endpoint from the openai_base_url config key now
+        assert "OPENAI_BASE_URL" not in iso.env_overrides
+        assert adapter.config_overrides["openai_base_url"] == '"https://api.openai.com"'
+        assert adapter.config_overrides["cli_auth_credentials_store"] == '"file"'
+        # Native single-file sources get refreshed tokens written back
+        assert iso.sync_back[".codex/auth.json"] == str(codex_config.resolve())
 
 
 class TestCreateAdapterFromConfigFile:

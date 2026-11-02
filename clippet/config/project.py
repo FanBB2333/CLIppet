@@ -1,8 +1,11 @@
 """Project-level .clippet.json configuration discovery and loading.
 
 This module provides functions to discover, load, and resolve project-level
-configuration files that allow running `clippet codex` or `clippet claude`
-directly inside a project directory.
+configuration files that allow running `clippet codex`, `clippet claude`,
+`clippet gemini` or `clippet qodercli` directly inside a project directory —
+either with project-local credential files or by pinning a named HOME env
+(``{"agents": {"codex": {"env": "work"}}}``) so the project always runs under
+the right account.
 
 Security considerations:
 - .clippet.json must NOT store API keys, tokens, or raw secret values
@@ -27,31 +30,40 @@ PROJECT_CONFIG_FILENAME = ".clippet.json"
 
 class ProjectAgentConfig(BaseModel):
     """Configuration for a single agent in .clippet.json.
-    
-    At least one of config_path or codex_config_path must be provided.
+
+    Provide either ``env`` (a registered CLIppet env to launch in) or at least
+    one of ``config_path`` / ``codex_config_path``.  ``account`` selects an
+    account when ``config_path`` points at a multi-account credential file.
     extra="forbid" rejects unknown fields to prevent inline secrets.
     """
     model_config = ConfigDict(extra="forbid")
 
     config_path: str | None = None
     codex_config_path: str | None = None
+    env: str | None = None
+    account: str | None = None
 
     @model_validator(mode="after")
     def validate_minimum_fields(self) -> "ProjectAgentConfig":
-        if self.config_path is None and self.codex_config_path is None:
-            raise ValueError("At least one config path must be provided")
+        has_paths = self.config_path is not None or self.codex_config_path is not None
+        if self.env is not None and has_paths:
+            raise ValueError("Use either 'env' or config paths, not both")
+        if self.env is None and not has_paths:
+            raise ValueError("At least one config path (or 'env') must be provided")
         return self
 
 
 class ProjectAgentsConfig(BaseModel):
     """Container for agent configurations in .clippet.json.
-    
+
     extra="forbid" rejects unknown agent names.
     """
     model_config = ConfigDict(extra="forbid")
 
     claude: ProjectAgentConfig | None = None
     codex: ProjectAgentConfig | None = None
+    gemini: ProjectAgentConfig | None = None
+    qodercli: ProjectAgentConfig | None = None
 
 
 class ProjectConfig(BaseModel):
@@ -71,11 +83,13 @@ class ResolvedProjectLaunch:
     
     All paths are resolved to absolute paths.
     """
-    agent_type: Literal["claude", "codex"]
+    agent_type: Literal["claude", "codex", "gemini", "qodercli"]
     project_root: Path
     config_file: Path
     config_path: str | None
     codex_config_path: str | None
+    env: str | None = None
+    account: str | None = None
 
 
 def _find_git_root(start_dir: Path) -> Path | None:
@@ -178,7 +192,11 @@ def _resolve_project_path(raw_path: str | None, project_root: Path) -> str | Non
     """
     if raw_path is None:
         return None
-    
+
+    # Pseudo-source: the Cockpit Tools account store.
+    if raw_path == "cockpit" or raw_path.startswith("cockpit:"):
+        return raw_path
+
     path = Path(raw_path)
     
     # Handle ~ expansion
@@ -206,7 +224,7 @@ def _resolve_project_path(raw_path: str | None, project_root: Path) -> str | Non
 
 def resolve_project_launch(
     start_dir: Path,
-    agent_type: Literal["claude", "codex"],
+    agent_type: Literal["claude", "codex", "gemini", "qodercli"],
 ) -> ResolvedProjectLaunch:
     """Find and resolve project-level config for launching an agent.
     
@@ -216,7 +234,7 @@ def resolve_project_launch(
     
     Args:
         start_dir: Directory to start searching from (usually cwd).
-        agent_type: The agent to launch ("claude" or "codex").
+        agent_type: The agent to launch ("claude", "codex", "gemini", "qodercli").
         
     Returns:
         ResolvedProjectLaunch with all paths resolved.
@@ -235,8 +253,8 @@ def resolve_project_launch(
 
     project_root = config_file.parent.resolve()
     project_config = load_project_config(config_file)
-    agent_config = getattr(project_config.agents, agent_type)
-    
+    agent_config = getattr(project_config.agents, agent_type, None)
+
     if agent_config is None:
         raise KeyError(
             f"Agent '{agent_type}' is not configured in {config_file}"
@@ -251,4 +269,6 @@ def resolve_project_launch(
             agent_config.codex_config_path,
             project_root,
         ),
+        env=agent_config.env,
+        account=agent_config.account,
     )
