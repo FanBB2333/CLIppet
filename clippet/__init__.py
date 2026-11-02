@@ -1,7 +1,20 @@
 """CLIppet - A unified adapter framework for orchestrating CLI AI agents."""
 
 from clippet.adapters import BaseAdapter, BaseSubprocessAdapter
-from clippet.adapters import ClaudeAdapter, CodexAdapter, QoderAdapter
+from clippet.adapters import (
+    ClaudeAdapter,
+    CodexAdapter,
+    GeminiAdapter,
+    QoderAdapter,
+    QoderCLIAdapter,
+)
+from clippet.auth import (
+    CodexCredential,
+    CredentialFormatError,
+    CredentialSelectionError,
+    load_codex_credential,
+    load_codex_credentials,
+)
 from clippet.config.detector import (
     create_adapter_from_claude_config,
     create_adapter_from_codex_config,
@@ -11,7 +24,10 @@ from clippet.config.detector import (
 )
 from clippet.config.environments import (
     add_environment,
+    clone_home_env,
+    create_home_env,
     get_environment,
+    import_codex_credential,
     list_environments,
     load_environments,
     remove_environment,
@@ -35,8 +51,10 @@ from clippet.config.registry import (
 )
 from clippet.isolation import (
     AGENT_CONFIG_PATHS,
+    ContentCredentialProvider,
     CredentialProvider,
     CredentialSet,
+    CredentialSyncBack,
     DirectoryCopyProvider,
     EnvVarCredentialProvider,
     FileCredentialProvider,
@@ -67,8 +85,16 @@ __all__ = [
     "FileCredentialProvider",
     "EnvVarCredentialProvider",
     "DirectoryCopyProvider",
+    "ContentCredentialProvider",
     "CredentialSet",
+    "CredentialSyncBack",
     "AGENT_CONFIG_PATHS",
+    # Identity layer
+    "CodexCredential",
+    "CredentialFormatError",
+    "CredentialSelectionError",
+    "load_codex_credential",
+    "load_codex_credentials",
     # Protocol
     "ClippetAdapter",
     # Base classes
@@ -77,7 +103,9 @@ __all__ = [
     # Adapters
     "ClaudeAdapter",
     "CodexAdapter",
+    "GeminiAdapter",
     "QoderAdapter",
+    "QoderCLIAdapter",
     # Orchestrator
     "ClippetRunner",
     # Config
@@ -105,6 +133,9 @@ __all__ = [
     "load_environments",
     "get_environment",
     "add_environment",
+    "create_home_env",
+    "clone_home_env",
+    "import_codex_credential",
     "remove_environment",
     "list_environments",
     # Version

@@ -258,12 +258,11 @@ class TestCliExecution:
         monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
         def fake_run(command, **kwargs):
+            # Interactive launches never force a permission mode
             assert command == [
                 "claude",
                 "--model",
                 "sonnet",
-                "--permission-mode",
-                "bypassPermissions",
             ]
             assert kwargs["cwd"] == Path.cwd()
             return MagicMock(returncode=0)
@@ -406,8 +405,6 @@ class TestCliExecution:
                 "claude",
                 "--model",
                 "glm-5.1",
-                "--permission-mode",
-                "bypassPermissions",
             ]
             assert settings_path.exists()
             assert kwargs["env"]["ANTHROPIC_MODEL"] == "glm-5.1"
@@ -844,8 +841,12 @@ class TestInteractiveHomePicker:
         """Non-TTY (piped) invocation must not block on the picker."""
         self._setup_envs(tmp_path, monkeypatch, ["work"])
 
+        import io
+
+        empty_stdin = io.StringIO("")
+        empty_stdin.isatty = lambda: False  # type: ignore[method-assign]
         monkeypatch.setattr(sys, "argv", ["clippet", "qodercli"])
-        monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+        monkeypatch.setattr(sys, "stdin", empty_stdin)
 
         called_input = []
         monkeypatch.setattr(

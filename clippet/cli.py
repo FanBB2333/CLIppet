@@ -1,42 +1,146 @@
-"""CLI entry point for CLIppet."""
+"""CLI entry point for CLIppet.
+
+Usage overview::
+
+    clippet [OPTIONS] [AGENT] [AGENT ARGS...]   # launch an agent (interactive or -p)
+    clippet env {list,create,import,status,sync,add,clone,path,remove} ...
+    clippet auth {list,export} SOURCE ...
+
+Everything after the agent name is forwarded verbatim to the agent's own CLI
+(``clippet -e work codex resume --last``).  CLIppet's ``-p/--prompt`` is the
+one exception: placed right after the agent name it still selects headless
+mode.  Use ``--`` to forward even that (``clippet -e work claude -- -p hi``).
+"""
 
 from __future__ import annotations
 
 import argparse
+import json
+import signal
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-from clippet.adapters.base import BaseSubprocessAdapter
+from clippet.adapters.base import (
+    BaseSubprocessAdapter,
+    build_credential_set,
+    create_isolated_environment,
+)
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.adapters.codex import CodexAdapter
 from clippet.adapters.gemini import GeminiAdapter
 from clippet.adapters.qodercli import QoderCLIAdapter
+from clippet.auth.codex import (
+    CodexCredential,
+    CredentialFormatError,
+    CredentialSelectionError,
+    load_codex_credentials,
+    select_credential,
+)
 from clippet.config.detector import (
     create_adapter_from_config_file,
     detect_config_type,
 )
 from clippet.config.environments import (
     ENV_TYPE_HOME,
+    EnvironmentRegistryError,
+    SEEDABLE_AGENTS,
     add_environment,
     clone_home_env,
-    create_home_env,
+    create_home_env_with_report,
     entry_type,
     get_environment,
+    import_codex_credential,
     list_environments,
+    read_env_codex_credential,
     remove_environment,
+    shared_entries,
+    sync_linked_codex_credential,
 )
 from clippet.config.project import resolve_project_launch
 from clippet.config.registry import create_runner_from_config, load_config
 from clippet.isolation import (
     AGENT_CONFIG_PATHS,
-    CredentialSet,
-    EnvVarCredentialProvider,
-    FileCredentialProvider,
-    IsolatedEnvironment,
+    CredentialSyncBack,
+    ensure_shared_links,
 )
 from clippet.models import AgentRequest, IsolationConfig
-from clippet.parsers.extractors import parse_claude_json_output
+
+_NATIVE_AGENTS: tuple[str, ...] = ("claude", "codex", "gemini", "qodercli")
+
+# CLIppet run options that take a value (used to find the agent name).
+_VALUE_OPTIONS = frozenset(
+    {"-c", "--config", "--codex-config", "-e", "--env", "-p", "--prompt", "--account"}
+)
+_PROMPT_OPTIONS = ("-p", "--prompt")
+
+
+def _is_cockpit_source(value: str | None) -> bool:
+    return bool(value) and (value == "cockpit" or str(value).startswith("cockpit:"))
+
+
+def _note(message: str) -> None:
+    print(f"clippet: {message}", file=sys.stderr)
+
+
+def _fail(message: str, code: int = 1) -> None:
+    print(f"Error: {message}", file=sys.stderr)
+    sys.exit(code)
+
+
+# --- argument parsing ---------------------------------------------------------
+
+
+def split_agent_args(argv: list[str]) -> tuple[list[str], list[str]]:
+    """Split run-mode *argv* into ``(clippet_argv, agent_args)``.
+
+    * Options before the first positional token belong to CLIppet.
+    * The first positional token is the agent (or composite adapter) name;
+      everything after it is forwarded to the agent CLI verbatim, except a
+      ``-p/--prompt VALUE`` that directly follows the agent name.
+    * ``--`` ends CLIppet's options: everything after it is forwarded.
+    """
+
+    clippet_argv: list[str] = []
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token == "--":
+            return clippet_argv, argv[index + 1:]
+        if token in _VALUE_OPTIONS:
+            clippet_argv.extend(argv[index:index + 2])
+            index += 2
+            continue
+        if token.startswith("-"):
+            clippet_argv.append(token)
+            index += 1
+            continue
+
+        # First positional: the agent name.
+        clippet_argv.append(token)
+        rest = argv[index + 1:]
+        agent_args: list[str] = []
+        position = 0
+        while position < len(rest):
+            item = rest[position]
+            if item == "--":
+                agent_args.extend(rest[position + 1:])
+                break
+            if not agent_args and item in _PROMPT_OPTIONS and position + 1 < len(rest):
+                clippet_argv.extend([item, rest[position + 1]])
+                position += 2
+                continue
+            if not agent_args and item.startswith("--prompt="):
+                clippet_argv.append(item)
+                position += 1
+                continue
+            agent_args.extend(rest[position:])
+            break
+        return clippet_argv, agent_args
+
+    return clippet_argv, []
 
 
 class _ClippetArgumentParser:
@@ -46,23 +150,25 @@ class _ClippetArgumentParser:
         description = (
             "CLIppet - A unified adapter framework for orchestrating CLI AI agents."
         )
+        epilog = (
+            "Everything after AGENT is passed to the agent CLI unchanged, e.g. "
+            "'clippet -e work codex resume --last'. Use '--' to pass even -p."
+        )
 
         self._root_parser = argparse.ArgumentParser(
             prog="clippet",
             description=description,
+            epilog=epilog,
         )
-
         subparsers = self._root_parser.add_subparsers(dest="command")
-
-        run_parser = subparsers.add_parser("run", help="Run an agent with a config")
-        _add_run_arguments(run_parser)
-
-        env_parser = subparsers.add_parser("env", help="Manage environment profiles")
-        _add_env_subcommands(env_parser)
+        _add_run_arguments(subparsers.add_parser("run", help="Run an agent with a config"))
+        _add_env_subcommands(subparsers.add_parser("env", help="Manage environments"))
+        _add_auth_subcommands(subparsers.add_parser("auth", help="Inspect/convert credentials"))
 
         self._run_parser = argparse.ArgumentParser(
             prog="clippet",
             description=description,
+            epilog=epilog,
         )
         _add_run_arguments(self._run_parser)
 
@@ -71,6 +177,12 @@ class _ClippetArgumentParser:
             description="Manage environment profiles",
         )
         _add_env_subcommands(self._env_parser)
+
+        self._auth_parser = argparse.ArgumentParser(
+            prog="clippet auth",
+            description="Inspect and convert agent credentials (Codex for now)",
+        )
+        _add_auth_subcommands(self._auth_parser)
 
     def parse_args(self, args: list[str] | None = None) -> argparse.Namespace:
         """Parse CLI arguments with support for top-level agent invocations."""
@@ -82,13 +194,20 @@ class _ClippetArgumentParser:
             namespace.command = "env"
             return namespace
 
-        if argv and argv[0] == "run":
-            namespace = self._run_parser.parse_args(argv[1:])
-            namespace.command = "run"
+        if argv and argv[0] == "auth":
+            namespace = self._auth_parser.parse_args(argv[1:])
+            namespace.command = "auth"
             return namespace
 
-        namespace = self._run_parser.parse_args(argv)
-        namespace.command = None
+        command: str | None = None
+        if argv and argv[0] == "run":
+            command = "run"
+            argv = argv[1:]
+
+        clippet_argv, agent_args = split_agent_args(argv)
+        namespace = self._run_parser.parse_args(clippet_argv)
+        namespace.agent_args = agent_args
+        namespace.command = command
         return namespace
 
     def print_help(self) -> None:
@@ -105,11 +224,15 @@ def _build_parser() -> _ClippetArgumentParser:
 def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     """Attach the shared run-mode arguments to *parser*."""
 
+    from clippet import __version__
+
     parser.add_argument(
         "-c", "--config",
         help=(
-            "Path to a config file (Claude Code, Codex, or CLIppet format) "
-            "or a directory to use as second-home"
+            "Config or credential to launch with: Claude settings JSON, Codex "
+            "credential (auth.json, Cockpit Tools / sub2api / CLIProxyAPI export, "
+            "token JSON), Gemini .env, CLIppet composite config, a directory to "
+            "use as HOME, or 'cockpit' for the Cockpit Tools account store"
         ),
     )
     parser.add_argument(
@@ -117,26 +240,38 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
         dest="codex_config",
         help=(
             "Path to a Codex config.toml file (model/provider settings).  "
-            "When used with -c pointing to an auth.json, both files are "
+            "When used with -c pointing to a Codex credential, both files are "
             "injected into the sandbox.  Can also be used alone — the "
-            "auth.json is then read from ~/.codex/auth.json."
+            "credential is then read from ~/.codex/auth.json."
+        ),
+    )
+    parser.add_argument(
+        "--account",
+        help=(
+            "Account to use when the credential source holds several "
+            "(1-based index, e-mail, e-mail local part, label or account id)"
         ),
     )
     parser.add_argument(
         "-e", "--env",
-        help="Named environment profile",
+        help="Named environment (HOME container or file alias)",
     )
     parser.add_argument(
         "-p", "--prompt",
-        help="Task prompt",
+        help="Run once non-interactively with this prompt",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"clippet {__version__}",
     )
     parser.add_argument(
         "agent_type",
         nargs="?",
         default=None,
         help=(
-            "Native agent type (claude/codex/qodercli) or a composite config "
-            "adapter name. Optional for native config files and "
+            "Native agent type (claude/codex/gemini/qodercli) or a composite "
+            "config adapter name. Optional for native config files and "
             "single-adapter composite configs."
         ),
     )
@@ -163,8 +298,18 @@ def _add_env_subcommands(parser: argparse.ArgumentParser) -> None:
         "--from-current",
         action="store_true",
         help=(
-            "Seed the new env by copying the current ~/.claude, ~/.codex, "
-            "~/.gemini directories. Without this flag the env starts empty."
+            "Seed the new env with agent configuration from the current HOME "
+            "(settings, config.toml, MCP config, skills, prompts). Sessions, "
+            "logs and caches are never copied."
+        ),
+    )
+    create.add_argument(
+        "--with-auth",
+        action="store_true",
+        help=(
+            "With --from-current, also copy login credentials (e.g. "
+            "~/.codex/auth.json). The copy shares OAuth refresh tokens with "
+            "the current HOME; logging in inside the env is safer."
         ),
     )
     create.add_argument(
@@ -172,7 +317,7 @@ def _add_env_subcommands(parser: argparse.ArgumentParser) -> None:
         default=None,
         help=(
             "Comma-separated list of agents to seed when --from-current is set "
-            "(e.g. 'claude,codex'). Default: seed all."
+            f"({', '.join(SEEDABLE_AGENTS)}). Default: seed all."
         ),
     )
     create.add_argument(
@@ -183,6 +328,55 @@ def _add_env_subcommands(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Replace any existing env with the same name",
     )
+    _add_share_arguments(create)
+
+    imp = sub.add_parser(
+        "import",
+        help="Store a Codex account (any supported format) in a HOME env",
+    )
+    imp.add_argument("name", help="Env name (created if it does not exist)")
+    imp.add_argument(
+        "source",
+        help=(
+            "Credential source: Codex auth.json, Cockpit Tools export/backup, "
+            "sub2api export, CLIProxyAPI token file, token JSON, or 'cockpit' "
+            "for the live Cockpit Tools account store"
+        ),
+    )
+    imp.add_argument("--account", help="Account selector when the source holds several")
+    link = imp.add_mutually_exclusive_group()
+    link.add_argument(
+        "--link",
+        dest="link",
+        action="store_true",
+        default=None,
+        help="Pull the newest login from the source before every launch "
+        "(default for 'cockpit')",
+    )
+    link.add_argument(
+        "--no-link",
+        dest="link",
+        action="store_false",
+        help="Copy the credential once",
+    )
+    imp.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace a different Codex account already stored in the env",
+    )
+    imp.add_argument(
+        "--bare",
+        action="store_true",
+        help="When creating the env, do not copy ~/.codex config (config.toml, skills, ...)",
+    )
+    imp.add_argument("--description", default="", help="Description for a new env")
+
+    status = sub.add_parser("status", help="Show which identity each env carries")
+    status.add_argument("name", nargs="?", help="Only show this env")
+    status.add_argument("--json", action="store_true", help="Machine-readable output")
+
+    sync = sub.add_parser("sync", help="Pull the newest login for a linked env now")
+    sync.add_argument("name", help="Env name")
 
     add = sub.add_parser(
         "add",
@@ -201,6 +395,11 @@ def _add_env_subcommands(parser: argparse.ArgumentParser) -> None:
         "--overwrite",
         action="store_true",
         help="Replace the destination env if it already exists",
+    )
+    clone.add_argument(
+        "--with-auth",
+        action="store_true",
+        help="Also copy login credentials (shares OAuth refresh tokens)",
     )
 
     path_p = sub.add_parser(
@@ -221,7 +420,92 @@ def _add_env_subcommands(parser: argparse.ArgumentParser) -> None:
     )
 
 
-# --- handlers ---------------------------------------------------------------
+def _add_share_arguments(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--share",
+        action="append",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Dotfile to link from the real HOME into the env (repeatable). "
+            "Default: .gitconfig and .config/git, so git keeps your identity."
+        ),
+    )
+    group.add_argument(
+        "--no-share",
+        action="store_true",
+        help="Do not link any dotfiles from the real HOME",
+    )
+
+
+def _add_auth_subcommands(parser: argparse.ArgumentParser) -> None:
+    sub = parser.add_subparsers(dest="auth_action")
+
+    lst = sub.add_parser("list", help="List the Codex accounts in a credential source")
+    lst.add_argument("source", help="File, directory, or 'cockpit'")
+    lst.add_argument("--json", action="store_true", help="Machine-readable output (no secrets)")
+
+    exp = sub.add_parser("export", help="Write one account as a native Codex auth.json")
+    exp.add_argument("source", help="File, directory, or 'cockpit'")
+    exp.add_argument("--account", help="Account selector when the source holds several")
+    exp.add_argument("-o", "--output", required=True, help="Output path, or '-' for stdout")
+    exp.add_argument("--force", action="store_true", help="Overwrite an existing file")
+
+
+# --- formatting helpers -------------------------------------------------------
+
+
+def _fmt_moment(moment: datetime | None) -> str:
+    if moment is None:
+        return "-"
+    local = moment.astimezone()
+    delta = moment - datetime.now(timezone.utc)
+    days = delta.total_seconds() / 86400
+    if days >= 1:
+        rel = f"in {int(days)}d"
+    elif days >= 0:
+        rel = f"in {int(delta.total_seconds() // 3600)}h"
+    elif days > -1:
+        rel = f"{int(-delta.total_seconds() // 3600)}h ago"
+    else:
+        rel = f"{int(-days)}d ago"
+    return f"{local:%Y-%m-%d %H:%M} ({rel})"
+
+
+def describe_codex_credential(credential: CodexCredential | None) -> str:
+    """One-line, secret-free description of a Codex credential."""
+
+    if credential is None:
+        return "not logged in"
+    if credential.auth_mode == "apikey":
+        base = f" @ {credential.base_url}" if credential.base_url else ""
+        return f"API key{base}"
+    who = credential.display_email or credential.display_account_id or "ChatGPT login"
+    plan = f" [{credential.display_plan}]" if credential.display_plan else ""
+    expired = " (access token expired)" if credential.is_expired() else ""
+    return f"{who}{plan}{expired}"
+
+
+# --- run handlers -------------------------------------------------------------
+
+
+def _prepare_home_env(name: str, profile: dict, agent_type: str | None) -> None:
+    """Pre-launch upkeep for a registered HOME env (links, linked logins)."""
+
+    home_dir = Path(profile.get("home_dir") or "")
+    try:
+        ensure_shared_links(home_dir, shared_entries(profile))
+    except OSError as exc:
+        _note(f"could not link shared dotfiles into env '{name}': {exc}")
+
+    if agent_type not in (None, "codex"):
+        return
+    result = sync_linked_codex_credential(name, profile)
+    if result.action == "updated":
+        _note(f"env '{name}': {result.message}")
+    elif result.action in ("env-newer", "error"):
+        _note(f"env '{name}': warning: {result.message}")
 
 
 def _resolve_config_path(args: argparse.Namespace) -> str | None:
@@ -233,42 +517,45 @@ def _resolve_config_path(args: argparse.Namespace) -> str | None:
 
     config_path: str | None = getattr(args, "config", None)
     env_name: str | None = getattr(args, "env", None)
-    codex_config: str | None = getattr(args, "codex_config", None)
 
     if config_path:
-        return str(Path(config_path).resolve())
+        if _is_cockpit_source(config_path):
+            return config_path
+        return str(Path(config_path).expanduser().resolve())
 
     if env_name:
         try:
             env_profile = get_environment(env_name)
         except KeyError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            sys.exit(1)
+            _fail(str(exc.args[0] if exc.args else exc))
+        except EnvironmentRegistryError as exc:
+            _fail(str(exc))
         if entry_type(env_profile) == ENV_TYPE_HOME:
             home_dir = env_profile.get("home_dir")
             if not home_dir:
-                print(
-                    f"Error: env '{env_name}' is a HOME-container entry but has no "
-                    "'home_dir' field. The registry may be corrupted.",
-                    file=sys.stderr,
+                _fail(
+                    f"env '{env_name}' is a HOME-container entry but has no "
+                    "'home_dir' field. The registry may be corrupted."
                 )
-                sys.exit(1)
+            if not Path(home_dir).is_dir():
+                _fail(
+                    f"the HOME directory of env '{env_name}' is missing: {home_dir}. "
+                    f"Recreate it with 'clippet env create {env_name} --overwrite'."
+                )
+            _prepare_home_env(env_name, env_profile, getattr(args, "agent_type", None))
             return home_dir
         return env_profile["config_path"]
 
-    # Allow --codex-config alone (no -c required)
-    if codex_config:
-        return None
-
-    # No explicit config - return None and let caller handle project-level lookup
     return None
 
 
 def _apply_project_level_config(args: argparse.Namespace) -> bool:
-    """Apply project-level .clippet.json config to args if applicable.
-    
-    Returns True if project-level config was applied, False otherwise.
+    """Apply project-level .clippet.json config to args (strict variant).
+
+    Returns True if project-level config was applied; exits when no
+    ``.clippet.json`` is found or the agent is not configured in it.
     """
+
     has_explicit_config = any([
         getattr(args, "config", None),
         getattr(args, "env", None),
@@ -276,38 +563,49 @@ def _apply_project_level_config(args: argparse.Namespace) -> bool:
     ])
     agent_type = getattr(args, "agent_type", None)
 
-    # Only apply for native agent types without explicit config
-    if has_explicit_config or agent_type not in {"claude", "codex"}:
+    if has_explicit_config or agent_type not in _NATIVE_AGENTS:
         return False
 
     try:
         launch = resolve_project_launch(Path.cwd(), agent_type)
     except FileNotFoundError:
-        print(
-            "Error: no explicit config was provided and no project-level .clippet.json "
-            "was found from the current directory to the Git root.",
-            file=sys.stderr,
+        _fail(
+            "no explicit config was provided and no project-level .clippet.json "
+            "was found from the current directory to the Git root."
         )
-        sys.exit(1)
     except KeyError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
-    
-    # Apply resolved paths to args
+        _fail(str(exc))
+    except ValueError as exc:
+        _fail(str(exc))
+
+    _apply_launch(args, launch)
+    return True
+
+
+def _apply_launch(args: argparse.Namespace, launch) -> None:
+    if launch.env is not None:
+        args.env = launch.env
     if launch.config_path is not None:
         args.config = launch.config_path
     if launch.codex_config_path is not None:
         args.codex_config = launch.codex_config_path
-    
-    return True
+    if launch.account is not None and not getattr(args, "account", None):
+        args.account = launch.account
 
 
-def _resolve_prompt(args: argparse.Namespace) -> str | None:
-    """Resolve a prompt from ``-p`` or stdin, if present."""
+def _resolve_prompt(args: argparse.Namespace, passthrough: list[str] | None = None) -> str | None:
+    """Resolve a prompt from ``-p`` or stdin, if present.
+
+    Stdin is left alone when arguments are forwarded to the agent CLI, so
+    commands like ``codex login --with-api-key < key.txt`` keep working.
+    """
 
     prompt: str | None = getattr(args, "prompt", None)
     if prompt:
         return prompt
+
+    if passthrough:
+        return None
 
     if not sys.stdin.isatty():
         stdin_prompt = sys.stdin.read().strip()
@@ -324,13 +622,13 @@ def _normalize_native_agent_type(
 ) -> str:
     """Validate and normalize the requested native agent type."""
 
-    if detected_type not in {"claude_code", "codex"}:
+    if detected_type not in {"claude_code", "codex", "gemini"}:
         raise ValueError(f"Unsupported native config type: {detected_type}")
 
     if agent_type == "qodercli":
         raise ValueError(
-            "'qodercli' is only supported with CLIppet composite configs. "
-            "Please use a CLIppet config file instead."
+            "'qodercli' is only supported with CLIppet composite configs or "
+            "HOME envs. Please use a CLIppet config file or -e <env> instead."
         )
 
     requested_type = agent_type
@@ -370,108 +668,114 @@ def _resolve_clippet_adapter_name(
     )
 
 
-def _build_interactive_command(adapter: BaseSubprocessAdapter) -> list[str]:
+def _build_interactive_command(
+    adapter: BaseSubprocessAdapter,
+    extra_args: list[str] | None = None,
+) -> list[str]:
     """Build the interactive command for a configured adapter."""
 
-    if isinstance(adapter, ClaudeAdapter):
-        command = ["claude"]
-
-        if adapter.model:
-            command.extend(["--model", adapter.model])
-        if adapter.permission_mode:
-            command.extend(["--permission-mode", adapter.permission_mode])
-        if adapter.allowed_tools:
-            command.extend(["--allowed-tools", ",".join(adapter.allowed_tools)])
-        if adapter.disallowed_tools:
-            command.extend(["--disallowed-tools", ",".join(adapter.disallowed_tools)])
-        if adapter.append_system_prompt:
-            command.extend(["--append-system-prompt", adapter.append_system_prompt])
-        if adapter.verbose:
-            command.append("--verbose")
-
-        return command
-
-    if isinstance(adapter, CodexAdapter):
-        command = ["codex"]
-
-        if adapter.model:
-            command.extend(["--model", adapter.model])
-        if adapter.sandbox:
-            command.extend(["--sandbox", adapter.sandbox])
-        if adapter.config_overrides:
-            for key, value in adapter.config_overrides.items():
-                command.extend(["-c", f"{key}={value}"])
-
-        return command
-
-    if isinstance(adapter, GeminiAdapter):
-        return adapter.build_interactive_command()
-
-    if isinstance(adapter, QoderCLIAdapter):
-        return adapter.build_interactive_command()
+    builder = getattr(adapter, "build_interactive_command", None)
+    if isinstance(adapter, (ClaudeAdapter, CodexAdapter, GeminiAdapter, QoderCLIAdapter)) and callable(builder):
+        return builder(list(extra_args or []))
 
     raise ValueError(
         "Interactive launch is only supported for Claude, Codex, Gemini, and QoderCLI adapters."
     )
 
 
-def _build_credential_set(isolation: IsolationConfig) -> CredentialSet:
-    """Build credential providers for an isolation config."""
+def _ignore_sigint():
+    """Let Ctrl-C reach only the agent; return the previous handler."""
 
-    providers = []
+    try:
+        return signal.signal(signal.SIGINT, lambda _signum, _frame: None)
+    except ValueError:  # not in the main thread
+        return None
 
-    if isolation.credential_files:
-        providers.append(FileCredentialProvider(isolation.credential_files))
 
-    if isolation.env_overrides:
-        providers.append(EnvVarCredentialProvider(isolation.env_overrides))
-
-    return CredentialSet(providers)
+def _restore_sigint(previous) -> None:
+    if previous is None:
+        return
+    try:
+        signal.signal(signal.SIGINT, previous)
+    except (ValueError, TypeError):
+        pass
 
 
 def _run_interactive_command(
     command: list[str],
     isolation: IsolationConfig | None,
     cwd: Path,
+    agent: str | None = None,
 ) -> None:
-    """Launch an interactive agent command with optional isolation."""
+    """Launch an interactive agent command with optional isolation.
 
+    The child's exit status is propagated (``128 + N`` when it died from
+    signal ``N``).  Credential files the agent rewrote (refreshed OAuth tokens)
+    are synced back to their owner before a temporary HOME is removed.
+    """
+
+    binary = command[0] if command else "unknown"
+
+    def _spawn(env: dict[str, str] | None) -> subprocess.CompletedProcess:
+        try:
+            if env is None:
+                return subprocess.run(command, cwd=cwd, check=False)
+            return subprocess.run(command, cwd=cwd, env=env, check=False)
+        except FileNotFoundError:
+            _fail(f"CLI binary not found: {binary}")
+        except PermissionError:
+            _fail(f"Permission denied executing: {binary}")
+
+    previous = _ignore_sigint()
     try:
         if isolation is None:
-            completed = subprocess.run(command, cwd=cwd, check=False)
+            completed = _spawn(None)
         else:
-            home_dir = Path(isolation.home_dir) if isolation.home_dir else None
-            with IsolatedEnvironment(
-                home_dir=home_dir,
-                persist=isolation.persist_sandbox,
-                env_whitelist=isolation.env_whitelist,
-                env_blacklist=isolation.env_blacklist,
-            ) as isolated_env:
-                _build_credential_set(isolation).inject(isolated_env)
-                completed = subprocess.run(
-                    command,
-                    cwd=cwd,
-                    env=isolated_env.env,
-                    check=False,
-                )
-    except FileNotFoundError:
-        print(
-            f"Error: CLI binary not found: {command[0] if command else 'unknown'}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    except PermissionError:
-        print(
-            f"Error: Permission denied executing: {command[0] if command else 'unknown'}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    except Exception as exc:
-        print(f"Error launching agent: {exc}", file=sys.stderr)
-        sys.exit(1)
+            try:
+                isolated = create_isolated_environment(isolation, agent)
+                isolated.__enter__()
+            except Exception as exc:  # noqa: BLE001
+                _fail(f"could not prepare the isolated environment: {exc}")
+            try:
+                try:
+                    build_credential_set(isolation).inject(isolated)
+                    sync = CredentialSyncBack(isolation.sync_back)
+                    sync.snapshot(isolated)
+                except (OSError, ValueError) as exc:
+                    _fail(f"could not inject credentials: {exc}")
+                completed = _spawn(isolated.env)
+                try:
+                    for destination in sync.finalize(isolated):
+                        _note(f"the agent refreshed its login; saved to {destination}")
+                except OSError as exc:
+                    _note(f"warning: could not save refreshed credentials: {exc}")
+            finally:
+                isolated.cleanup()
+    except SystemExit:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        _fail(f"launching agent failed: {exc}")
+    finally:
+        _restore_sigint(previous)
 
-    if completed.returncode != 0:
-        sys.exit(completed.returncode)
+    returncode = completed.returncode
+    if isinstance(returncode, int) and returncode < 0:
+        returncode = 128 + (-returncode)
+    if returncode:
+        sys.exit(returncode)
+
+
+def _launch_adapter(adapter: BaseSubprocessAdapter, passthrough: list[str] | None) -> None:
+    try:
+        command = _build_interactive_command(adapter, passthrough)
+    except ValueError as exc:
+        _fail(str(exc))
+    _run_interactive_command(
+        command,
+        adapter.default_isolation,
+        Path.cwd(),
+        agent=getattr(adapter, "isolation_agent", None),
+    )
 
 
 def _run_interactive(
@@ -479,29 +783,23 @@ def _run_interactive(
     config_format: str,
     agent_type: str | None,
     codex_config: str | None = None,
+    account: str | None = None,
+    passthrough: list[str] | None = None,
 ) -> None:
     """Launch an agent interactively with the requested config."""
-
-    cwd = Path.cwd()
 
     # --- Second-home mode (directory) --------------------------------------
     if config_format == "second_home":
         if not agent_type:
-            print(
-                "Error: agent_type is required when -c points to a directory "
-                "(second-home mode). Specify one of: claude, codex, gemini, qodercli.",
-                file=sys.stderr,
+            _fail(
+                "agent_type is required when -c/-e points to a HOME directory "
+                "(second-home mode). Specify one of: claude, codex, gemini, qodercli."
             )
-            sys.exit(1)
-
         try:
             adapter = create_adapter_from_config_file(config_path, agent_type)
         except ValueError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            sys.exit(1)
-
-        command = _build_interactive_command(adapter)
-        _run_interactive_command(command, adapter.default_isolation, cwd)
+            _fail(str(exc))
+        _launch_adapter(adapter, passthrough)
         return
 
     # --- CLIppet composite -------------------------------------------------
@@ -512,19 +810,10 @@ def _run_interactive(
             runner = create_runner_from_config(config)
             adapter = runner.get_adapter(resolved_agent)
         except ValueError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            sys.exit(1)
-        except Exception as exc:
-            print(f"Error loading config: {exc}", file=sys.stderr)
-            sys.exit(1)
-
-        try:
-            command = _build_interactive_command(adapter)
-        except ValueError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            sys.exit(1)
-
-        _run_interactive_command(command, adapter.default_isolation, cwd)
+            _fail(str(exc))
+        except Exception as exc:  # noqa: BLE001
+            _fail(f"loading config failed: {exc}")
+        _launch_adapter(adapter, passthrough)
         return
 
     # --- Native config file ------------------------------------------------
@@ -535,119 +824,132 @@ def _run_interactive(
             agent_type,
         )
         adapter = create_adapter_from_config_file(
-            config_path, effective_type, codex_config_path=codex_config,
+            config_path, effective_type, codex_config_path=codex_config, account=account,
         )
-    except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+    except (ValueError, FileNotFoundError) as exc:
+        _fail(str(exc))
 
-    command = _build_interactive_command(adapter)
-    _run_interactive_command(command, adapter.default_isolation, cwd)
+    _launch_adapter(adapter, passthrough)
+
+
+def _detect_format(config_path: str) -> str:
+    if _is_cockpit_source(config_path):
+        return "codex"
+    return detect_config_type(config_path)
 
 
 def _handle_run(args: argparse.Namespace) -> None:
     """Execute an agent based on the resolved arguments."""
 
-    config_path = _resolve_config_path(args)
     agent_type: str | None = getattr(args, "agent_type", None)
     codex_config: str | None = getattr(args, "codex_config", None)
+    account: str | None = getattr(args, "account", None)
+    passthrough: list[str] = list(getattr(args, "agent_args", None) or [])
 
     if codex_config:
-        codex_config = str(Path(codex_config).resolve())
+        codex_config = str(Path(codex_config).expanduser().resolve())
+
+    config_path = _resolve_config_path(args)
 
     # --- codex-config-only shortcut (no -c) --------------------------------
     if config_path is None and codex_config is not None:
-        # Only reachable when --codex-config is given without -c
-        prompt = _resolve_prompt(args)
+        prompt = _resolve_prompt(args, passthrough)
         if prompt is None:
-            if not sys.stdin.isatty():
-                print(
-                    "Error: A prompt is required when stdin is piped. "
-                    "Use -p/--prompt or provide non-empty stdin.",
-                    file=sys.stderr,
+            if not passthrough and not sys.stdin.isatty():
+                _fail(
+                    "A prompt is required when stdin is piped. "
+                    "Use -p/--prompt or provide non-empty stdin."
                 )
-                sys.exit(1)
-            # Interactive mode with codex-config only
-            _run_codex_config_only(codex_config, interactive=True)
+            _run_codex_config_only(
+                codex_config, interactive=True, account=account, passthrough=passthrough,
+            )
             return
-        _run_codex_config_only(codex_config, prompt=prompt)
+        _run_codex_config_only(
+            codex_config, prompt=prompt, account=account, passthrough=passthrough,
+        )
         return
 
-    # --- No config path resolved - this shouldn't happen with project-level -------
     if config_path is None:
-        print(
-            "Error: Either -c/--config, -e/--env, or --codex-config must be provided.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        _fail("Either -c/--config, -e/--env, or --codex-config must be provided.")
 
     # 1. Detect config format
     try:
-        config_format = detect_config_type(config_path)
-    except (ValueError, FileNotFoundError, Exception) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        config_format = _detect_format(config_path)
+    except Exception as exc:  # noqa: BLE001 - surfaced verbatim
+        _fail(str(exc))
+
+    if config_format == "second_home" and codex_config:
+        _fail(
+            "--codex-config cannot be combined with a HOME directory; edit "
+            f"{Path(config_path) / '.codex' / 'config.toml'} or pass Codex's own "
+            "'-c key=value' / '--profile' options after the agent name."
+        )
 
     # 2. Resolve prompt; without one we launch the underlying CLI interactively.
-    prompt = _resolve_prompt(args)
+    prompt = _resolve_prompt(args, passthrough)
     if prompt is None:
-        if not sys.stdin.isatty():
-            print(
-                "Error: A prompt is required when stdin is piped. "
-                "Use -p/--prompt or provide non-empty stdin.",
-                file=sys.stderr,
+        if not passthrough and not sys.stdin.isatty():
+            _fail(
+                "A prompt is required when stdin is piped. "
+                "Use -p/--prompt or provide non-empty stdin."
             )
-            sys.exit(1)
-        _run_interactive(config_path, config_format, agent_type, codex_config)
+        _run_interactive(
+            config_path, config_format, agent_type, codex_config, account, passthrough,
+        )
         return
 
     # 3. Dispatch based on format
     if config_format == "clippet":
-        _run_clippet_composite(config_path, agent_type, prompt)
+        _run_clippet_composite(config_path, agent_type, prompt, passthrough)
     elif config_format == "second_home":
-        _run_second_home(config_path, agent_type, prompt)
+        _run_second_home(config_path, agent_type, prompt, passthrough)
     else:
-        _run_native_config(config_path, config_format, agent_type, prompt, codex_config)
+        _run_native_config(
+            config_path, config_format, agent_type, prompt, codex_config, account, passthrough,
+        )
+
+
+def _execute_headless(adapter, prompt: str, passthrough: list[str] | None) -> None:
+    request = AgentRequest(task_prompt=prompt, extra_cli_args=list(passthrough or []))
+    try:
+        result = adapter.run(request)
+    except Exception as exc:  # noqa: BLE001
+        _fail(f"executing agent failed: {exc}")
+    _print_result(result)
 
 
 def _run_second_home(
-    config_path: str, agent_type: str | None, prompt: str
+    config_path: str,
+    agent_type: str | None,
+    prompt: str,
+    passthrough: list[str] | None = None,
 ) -> None:
     """Handle a second-home directory config."""
 
     if not agent_type:
-        print(
-            "Error: agent_type is required when -c points to a directory "
-            "(second-home mode). Specify one of: claude, codex, gemini, qodercli.",
-            file=sys.stderr,
+        _fail(
+            "agent_type is required when -c/-e points to a HOME directory "
+            "(second-home mode). Specify one of: claude, codex, gemini, qodercli."
         )
-        sys.exit(1)
 
     try:
         adapter = create_adapter_from_config_file(config_path, agent_type)
     except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _fail(str(exc))
 
-    request = AgentRequest(task_prompt=prompt)
-
-    try:
-        result = adapter.run(request)
-    except Exception as exc:
-        print(f"Error executing agent: {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    _print_result(result)
+    _execute_headless(adapter, prompt, passthrough)
 
 
 def _run_codex_config_only(
     codex_config: str,
     prompt: str | None = None,
     interactive: bool = False,
+    account: str | None = None,
+    passthrough: list[str] | None = None,
 ) -> None:
     """Handle the case where only ``--codex-config`` is provided (no ``-c``).
 
-    The ``auth.json`` is read from ``~/.codex/auth.json``.
+    The credential is read from ``~/.codex/auth.json``.
     """
 
     try:
@@ -655,30 +957,23 @@ def _run_codex_config_only(
             config_path=None,
             agent_type="codex",
             codex_config_path=codex_config,
+            account=account,
         )
     except (ValueError, FileNotFoundError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _fail(str(exc))
 
     if interactive:
-        cwd = Path.cwd()
-        command = _build_interactive_command(adapter)
-        _run_interactive_command(command, adapter.default_isolation, cwd)
+        _launch_adapter(adapter, passthrough)
         return
 
-    request = AgentRequest(task_prompt=prompt)
-
-    try:
-        result = adapter.run(request)
-    except Exception as exc:
-        print(f"Error executing agent: {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    _print_result(result)
+    _execute_headless(adapter, prompt or "", passthrough)
 
 
 def _run_clippet_composite(
-    config_path: str, agent_type: str | None, prompt: str
+    config_path: str,
+    agent_type: str | None,
+    prompt: str,
+    passthrough: list[str] | None = None,
 ) -> None:
     """Handle a CLIppet composite config file."""
 
@@ -687,19 +982,16 @@ def _run_clippet_composite(
         resolved_agent = _resolve_clippet_adapter_name(config, agent_type)
         runner = create_runner_from_config(config)
     except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
-    except Exception as exc:
-        print(f"Error loading config: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _fail(str(exc))
+    except Exception as exc:  # noqa: BLE001
+        _fail(f"loading config failed: {exc}")
 
-    request = AgentRequest(task_prompt=prompt)
+    request = AgentRequest(task_prompt=prompt, extra_cli_args=list(passthrough or []))
 
     try:
         result = runner.execute(resolved_agent, request)
-    except Exception as exc:
-        print(f"Error executing agent: {exc}", file=sys.stderr)
-        sys.exit(1)
+    except Exception as exc:  # noqa: BLE001
+        _fail(f"executing agent failed: {exc}")
 
     _print_result(result)
 
@@ -710,8 +1002,10 @@ def _run_native_config(
     agent_type: str | None,
     prompt: str,
     codex_config: str | None = None,
+    account: str | None = None,
+    passthrough: list[str] | None = None,
 ) -> None:
-    """Handle a native Claude Code or Codex config file."""
+    """Handle a native Claude Code, Codex or Gemini config/credential."""
 
     try:
         effective_type = _normalize_native_agent_type(
@@ -720,40 +1014,27 @@ def _run_native_config(
             agent_type,
         )
         adapter = create_adapter_from_config_file(
-            config_path, effective_type, codex_config_path=codex_config,
+            config_path, effective_type, codex_config_path=codex_config, account=account,
         )
-    except ValueError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+    except (ValueError, FileNotFoundError) as exc:
+        _fail(str(exc))
 
-    request = AgentRequest(task_prompt=prompt)
-
-    try:
-        result = adapter.run(request)
-    except Exception as exc:
-        print(f"Error executing agent: {exc}", file=sys.stderr)
-        sys.exit(1)
-
-    _print_result(result)
+    _execute_headless(adapter, prompt, passthrough)
 
 
 def _print_result(result) -> None:
     """Print an :class:`AgentResult` to stdout/stderr."""
 
     if result.is_success:
-        output = result.raw_output
-        # Attempt to extract clean text from Claude JSON output
-        try:
-            parsed = parse_claude_json_output(output)
-            if parsed["result_text"] and not parsed["is_error"]:
-                output = parsed["result_text"]
-        except Exception:
-            pass
-        print(output)
+        text = getattr(result, "output_text", None)
+        print(text if isinstance(text, str) else result.raw_output)
     else:
         error_msg = result.error_message or "Agent execution failed."
         print(f"Error: {error_msg}", file=sys.stderr)
         sys.exit(1)
+
+
+# --- env subcommands ----------------------------------------------------------
 
 
 def _entry_path(profile: dict) -> str:
@@ -764,23 +1045,102 @@ def _entry_path(profile: dict) -> str:
     return profile.get("config_path", "")
 
 
+def env_identity(profile: dict) -> dict[str, Any]:
+    """Secret-free summary of the identities stored in an env entry."""
+
+    info: dict[str, Any] = {"type": entry_type(profile), "path": _entry_path(profile)}
+    if entry_type(profile) != ENV_TYPE_HOME:
+        return info
+
+    home = Path(profile.get("home_dir") or "")
+    info["exists"] = home.is_dir()
+    credential = read_env_codex_credential(home) if home.is_dir() else None
+    info["codex"] = None if credential is None else credential.summary()
+    info["codex_text"] = describe_codex_credential(credential)
+    source = profile.get("codex_source")
+    if isinstance(source, dict):
+        info["codex_source"] = {
+            key: source.get(key)
+            for key in ("source", "format", "email", "linked", "imported_at")
+        }
+    agents = {}
+    for agent, paths in AGENT_CONFIG_PATHS.items():
+        agents[agent] = any((home / rel).exists() for rel in paths)
+    info["agents"] = agents
+    info["share"] = list(shared_entries(profile))
+    info["description"] = profile.get("description", "")
+    return info
+
+
+def _print_env_list(envs: dict[str, dict]) -> None:
+    if not envs:
+        print("No environments registered.")
+        return
+    name_width = max(len("Name"), *(len(n) for n in envs)) + 2
+    type_width = 6
+    who_width = 34
+    print(f"{'Name':<{name_width}} {'Type':<{type_width}} {'Codex':<{who_width}} Path")
+    print(f"{'-' * name_width} {'-' * type_width} {'-' * who_width} {'-' * 40}")
+    for name, profile in sorted(envs.items()):
+        etype = entry_type(profile)
+        who = "-"
+        if etype == ENV_TYPE_HOME:
+            home = Path(profile.get("home_dir") or "")
+            who = describe_codex_credential(read_env_codex_credential(home)) if home.is_dir() else "(missing dir)"
+            if who == "not logged in":
+                who = "-"
+        print(f"{name:<{name_width}} {etype:<{type_width}} {who[:who_width]:<{who_width}} {_entry_path(profile)}")
+
+
+def _print_env_status(name: str, info: dict[str, Any]) -> None:
+    print(f"{name}  ({info['type']})  {info['path']}")
+    if info["type"] != ENV_TYPE_HOME:
+        return
+    if not info.get("exists"):
+        print("  ! HOME directory is missing")
+        return
+    if info.get("description"):
+        print(f"  description : {info['description']}")
+    codex = info.get("codex")
+    print(f"  codex       : {info['codex_text']}")
+    if codex:
+        expires = codex.get("access_expires_at")
+        refreshed = codex.get("last_refresh")
+        print(f"                access token expires {_fmt_moment(_parse_iso(expires))}")
+        print(f"                last refresh {_fmt_moment(_parse_iso(refreshed))}")
+    source = info.get("codex_source")
+    if source:
+        mode = "linked" if source.get("linked") else "copied"
+        print(f"  codex source: {source.get('source')} [{source.get('format')}] ({mode})")
+    present = [agent for agent, ok in info.get("agents", {}).items() if ok]
+    print(f"  agent dirs  : {', '.join(present) if present else '(none yet)'}")
+    if info.get("share"):
+        print(f"  shared      : {', '.join(info['share'])}")
+
+
+def _parse_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 def _handle_env(args: argparse.Namespace) -> None:
     """Dispatch env subcommands."""
 
+    try:
+        _dispatch_env(args)
+    except EnvironmentRegistryError as exc:
+        _fail(str(exc))
+
+
+def _dispatch_env(args: argparse.Namespace) -> None:
     action: str | None = getattr(args, "env_action", None)
 
     if action == "list":
-        envs = list_environments()
-        if not envs:
-            print("No environments registered.")
-            return
-        name_width = max(len(n) for n in envs) + 2
-        type_width = 6
-        print(f"{'Name':<{name_width}} {'Type':<{type_width}} Path")
-        print(f"{'-' * name_width} {'-' * type_width} {'-' * 40}")
-        for name, profile in sorted(envs.items()):
-            etype = entry_type(profile)
-            print(f"{name:<{name_width}} {etype:<{type_width}} {_entry_path(profile)}")
+        _print_env_list(list_environments())
         return
 
     if action == "create":
@@ -790,19 +1150,71 @@ def _handle_env(args: argparse.Namespace) -> None:
             if args.agents
             else None
         )
+        share = [] if getattr(args, "no_share", False) else getattr(args, "share", None)
         try:
-            home_dir = create_home_env(
+            home_dir, report = create_home_env_with_report(
                 name,
                 from_current=args.from_current,
                 agents=agents,
+                with_auth=getattr(args, "with_auth", False),
                 description=args.description,
                 overwrite=args.overwrite,
+                share=share,
             )
-        except (FileExistsError, ValueError) as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            sys.exit(1)
+        except (FileExistsError, ValueError, OSError) as exc:
+            _fail(str(exc))
         seeded = " (seeded from current $HOME)" if args.from_current else ""
         print(f"Environment '{name}' created at {home_dir}{seeded}.")
+        if report.copied:
+            print(f"  copied : {', '.join(report.copied)}")
+        if report.linked:
+            print(f"  linked : {', '.join(report.linked)} (from your real HOME)")
+        if report.skipped_credentials:
+            print(
+                "  skipped credentials: "
+                + ", ".join(report.skipped_credentials)
+                + "\n  Log in inside the env (e.g. 'clippet -e "
+                + name
+                + " codex login'), import an account ('clippet env import "
+                + name
+                + " <source>'), or re-create with --with-auth to copy them."
+            )
+        return
+
+    if action == "import":
+        _env_import(args)
+        return
+
+    if action == "status":
+        envs = list_environments()
+        if args.name:
+            if args.name not in envs:
+                _fail(f"Environment '{args.name}' not found.")
+            envs = {args.name: envs[args.name]}
+        infos = {name: env_identity(profile) for name, profile in sorted(envs.items())}
+        if args.json:
+            print(json.dumps(infos, indent=2, ensure_ascii=False))
+            return
+        if not infos:
+            print("No environments registered.")
+        for name, info in infos.items():
+            _print_env_status(name, info)
+        return
+
+    if action == "sync":
+        try:
+            profile = get_environment(args.name)
+        except KeyError as exc:
+            _fail(str(exc.args[0] if exc.args else exc))
+        result = sync_linked_codex_credential(args.name, profile)
+        if result.action == "skipped":
+            print(f"Env '{args.name}' is not linked to a credential source.")
+        elif result.action == "unchanged":
+            print(f"Env '{args.name}' already has the newest login.")
+        elif result.action == "updated":
+            print(f"Env '{args.name}': {result.message}.")
+        else:
+            _fail(f"env '{args.name}': {result.message}")
         return
 
     if action == "add":
@@ -811,8 +1223,7 @@ def _handle_env(args: argparse.Namespace) -> None:
         try:
             add_environment(name, config)
         except FileNotFoundError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            sys.exit(1)
+            _fail(str(exc))
         print(f"Environment '{name}' added (file alias).")
         return
 
@@ -823,19 +1234,20 @@ def _handle_env(args: argparse.Namespace) -> None:
                 args.dst,
                 description=args.description,
                 overwrite=args.overwrite,
+                with_auth=getattr(args, "with_auth", False),
             )
         except (KeyError, FileNotFoundError, FileExistsError, ValueError) as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            sys.exit(1)
+            _fail(str(exc.args[0] if isinstance(exc, KeyError) and exc.args else exc))
         print(f"Environment '{args.dst}' cloned from '{args.src}' at {home_dir}.")
+        if not getattr(args, "with_auth", False):
+            print("  (login credentials were not copied; pass --with-auth to copy them)")
         return
 
     if action == "path":
         try:
             profile = get_environment(args.name)
         except KeyError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            sys.exit(1)
+            _fail(str(exc.args[0] if exc.args else exc))
         print(_entry_path(profile))
         return
 
@@ -845,23 +1257,130 @@ def _handle_env(args: argparse.Namespace) -> None:
         try:
             remove_environment(name, purge=purge)
         except KeyError as exc:
-            print(f"Error: {exc}", file=sys.stderr)
-            sys.exit(1)
+            _fail(str(exc.args[0] if exc.args else exc))
+        except ValueError as exc:
+            _fail(str(exc))
         suffix = " (directory purged)" if purge else ""
         print(f"Environment '{name}' removed{suffix}.")
         return
 
-    print(
-        "Error: specify an env action: list, create, add, clone, path, or remove.",
-        file=sys.stderr,
+    _fail(
+        "specify an env action: list, create, import, status, sync, add, clone, "
+        "path, or remove."
     )
-    sys.exit(1)
+
+
+def _normalized_source(source: str) -> str:
+    if _is_cockpit_source(source):
+        return source
+    return str(Path(source).expanduser().resolve())
+
+
+def _env_import(args: argparse.Namespace) -> None:
+    source = _normalized_source(args.source)
+    try:
+        credentials = load_codex_credentials(source)
+        credential = select_credential(credentials, args.account)
+    except (CredentialFormatError, CredentialSelectionError, FileNotFoundError) as exc:
+        _fail(str(exc))
+
+    if credential.requires_reauth:
+        _note(
+            "warning: the source marks this account as needing re-login"
+            + (f" ({credential.reauth_reason})" if credential.reauth_reason else "")
+        )
+
+    link = args.link
+    if link is None:
+        link = credential.source_format == "cockpit-store"
+
+    try:
+        home_dir, created = import_codex_credential(
+            args.name,
+            credential,
+            source=source,
+            link=link,
+            overwrite=args.overwrite,
+            seed_config=not args.bare,
+            description=args.description,
+        )
+    except (FileExistsError, ValueError, OSError) as exc:
+        _fail(str(exc))
+
+    verb = "Created" if created else "Updated"
+    print(f"{verb} env '{args.name}' with Codex account {describe_codex_credential(credential)}.")
+    print(f"  HOME   : {home_dir}")
+    print(f"  source : {source} [{credential.source_format}]{' (linked)' if link else ''}")
+    if credential.auth_mode != "apikey":
+        if link:
+            print(
+                "  Linked: before each launch CLIppet pulls the newest login from the "
+                "source, so Codex inside the env rarely needs to refresh on its own."
+            )
+        else:
+            print(
+                "  Note: the source still holds the same refresh token. OpenAI rotates "
+                "refresh tokens, so whichever copy refreshes first invalidates the "
+                "other. For long-term parallel use, log in separately inside the env: "
+                f"clippet -e {args.name} codex login"
+            )
+    print(f"  Launch : clippet -e {args.name} codex")
+
+
+# --- auth subcommands ---------------------------------------------------------
+
+
+def _handle_auth(args: argparse.Namespace) -> None:
+    action = getattr(args, "auth_action", None)
+    if action not in ("list", "export"):
+        _fail("specify an auth action: list or export.")
+
+    source = _normalized_source(args.source)
+    try:
+        credentials = load_codex_credentials(source)
+    except (CredentialFormatError, FileNotFoundError, ValueError) as exc:
+        _fail(str(exc))
+
+    if action == "list":
+        if args.json:
+            print(json.dumps([c.summary() for c in credentials], indent=2, ensure_ascii=False))
+            return
+        print(f"{len(credentials)} Codex account(s) in {source} [{credentials[0].source_format}]")
+        for index, credential in enumerate(credentials, start=1):
+            flags = []
+            if credential.is_current:
+                flags.append("current")
+            if credential.requires_reauth:
+                flags.append("needs re-login")
+            if credential.auth_mode != "apikey" and credential.is_expired():
+                flags.append("access token expired")
+            flag_text = f"  <{', '.join(flags)}>" if flags else ""
+            print(f"  [{index}] {describe_codex_credential(credential)}{flag_text}")
+            if credential.auth_mode != "apikey":
+                print(
+                    f"      access token expires {_fmt_moment(credential.access_expires_at)}"
+                    f" | last refresh {_fmt_moment(credential.effective_last_refresh)}"
+                )
+        return
+
+    try:
+        credential = select_credential(credentials, args.account)
+    except CredentialSelectionError as exc:
+        _fail(str(exc))
+    text = credential.to_auth_json_text()
+    if args.output == "-":
+        sys.stdout.write(text)
+        return
+    target = Path(args.output).expanduser()
+    if target.exists() and not args.force:
+        _fail(f"{target} already exists; pass --force to overwrite it.")
+    from clippet.isolation import _write_private_file
+
+    _write_private_file(target, text.encode("utf-8"))
+    print(f"Wrote Codex auth.json for {describe_codex_credential(credential)} to {target}")
 
 
 # --- interactive HOME picker -------------------------------------------------
-
-
-_NATIVE_AGENTS: tuple[str, ...] = ("claude", "codex", "gemini", "qodercli")
 
 
 def _make_native_adapter(agent_type: str) -> BaseSubprocessAdapter:
@@ -878,11 +1397,11 @@ def _make_native_adapter(agent_type: str) -> BaseSubprocessAdapter:
     raise ValueError(f"Unsupported native agent type: {agent_type!r}")
 
 
-def _launch_native_directly(agent_type: str) -> None:
+def _launch_native_directly(agent_type: str, passthrough: list[str] | None = None) -> None:
     """Spawn the native CLI binary against the user's real ``$HOME``."""
 
     adapter = _make_native_adapter(agent_type)
-    command = _build_interactive_command(adapter)
+    command = _build_interactive_command(adapter, passthrough)
     _run_interactive_command(command, isolation=None, cwd=Path.cwd())
 
 
@@ -902,18 +1421,17 @@ def _maybe_apply_project_config(args: argparse.Namespace) -> bool:
     ])
     agent_type = getattr(args, "agent_type", None)
 
-    if has_explicit_config or agent_type not in {"claude", "codex"}:
+    if has_explicit_config or agent_type not in _NATIVE_AGENTS:
         return False
 
     try:
         launch = resolve_project_launch(Path.cwd(), agent_type)
     except (FileNotFoundError, KeyError):
         return False
+    except ValueError as exc:
+        _fail(f"invalid .clippet.json: {exc}")
 
-    if launch.config_path is not None:
-        args.config = launch.config_path
-    if launch.codex_config_path is not None:
-        args.codex_config = launch.codex_config_path
+    _apply_launch(args, launch)
     return True
 
 
@@ -944,16 +1462,23 @@ def _format_choice_body(
     home_path: Path | None,
     config_paths: list[str],
     real_home: Path,
+    agent_type: str | None = None,
 ) -> str:
     """Format a single choice line (without the leading marker)."""
 
     if home_path is None:
-        return f"{name:<16}  (real $HOME — {real_home})"
+        body = f"{name:<16}  (real $HOME — {real_home})"
+        if agent_type == "codex":
+            body += f"  {describe_codex_credential(read_env_codex_credential(real_home))}"
+        return body
     seeded = bool(config_paths) and any(
         (home_path / cfg).exists() for cfg in config_paths
     )
     tag = "[seeded]" if seeded else "        "
-    return f"{name:<16}  {tag}  {home_path}"
+    body = f"{name:<16}  {tag}  {home_path}"
+    if agent_type == "codex":
+        body += f"  {describe_codex_credential(read_env_codex_credential(home_path))}"
+    return body
 
 
 def _can_use_arrow_picker() -> bool:
@@ -996,7 +1521,7 @@ def _arrow_home_picker(
 
     n = len(choices)
     bodies = [
-        _format_choice_body(name, home, config_paths, real_home)
+        _format_choice_body(name, home, config_paths, real_home, agent_type)
         for name, home in choices
     ]
 
@@ -1065,7 +1590,7 @@ def _numeric_home_picker(
 
     print(f"clippet {agent_type} — select HOME:", file=sys.stderr)
     for idx, (name, home_path) in enumerate(choices, start=1):
-        body = _format_choice_body(name, home_path, config_paths, real_home)
+        body = _format_choice_body(name, home_path, config_paths, real_home, agent_type)
         print(f"  [{idx}] {body}", file=sys.stderr)
     print("  [q] quit", file=sys.stderr)
 
@@ -1102,7 +1627,8 @@ def _interactive_home_picker(agent_type: str) -> tuple[str, Path | None] | None:
     """Prompt the user to pick a HOME for the requested agent.
 
     Lists ``base`` (the real ``$HOME``) plus every registered HOME-container
-    env, tagging those that already contain seeded config for *agent_type*.
+    env, tagging those that already contain seeded config for *agent_type*
+    (and, for Codex, showing which account each one is logged in as).
 
     Uses an arrow-key navigable interface when stdin/stderr are real TTYs;
     otherwise falls back to a numeric ``input()`` prompt.
@@ -1124,43 +1650,46 @@ def _interactive_home_picker(agent_type: str) -> tuple[str, Path | None] | None:
 def _run_native_with_picker(args: argparse.Namespace) -> None:
     """Resolve the HOME for a bare ``clippet <agent>`` invocation.
 
-    1. Try project-level ``.clippet.json`` (claude/codex only).
-    2. If a TTY and no ``-p`` prompt, show the interactive HOME picker.
+    1. Try project-level ``.clippet.json``.
+    2. If a TTY and no prompt, show the interactive HOME picker.
     3. Otherwise, fall back to the user's real ``$HOME``.
     """
 
     agent_type: str = args.agent_type
-    prompt: str | None = getattr(args, "prompt", None)
+    passthrough: list[str] = list(getattr(args, "agent_args", None) or [])
 
-    if _maybe_apply_project_config(args):
+    try:
+        applied = _maybe_apply_project_config(args)
+    except EnvironmentRegistryError as exc:
+        _fail(str(exc))
+    if applied:
         _handle_run(args)
         return
 
+    prompt: str | None = getattr(args, "prompt", None)
+
     if prompt is None and sys.stdin.isatty():
-        choice = _interactive_home_picker(agent_type)
+        try:
+            choice = _interactive_home_picker(agent_type)
+        except EnvironmentRegistryError as exc:
+            _fail(str(exc))
         if choice is None:
             sys.exit(0)
         name, home_path = choice
         if home_path is None:
-            _launch_native_directly(agent_type)
+            _launch_native_directly(agent_type, passthrough)
             return
         args.env = name
         _handle_run(args)
         return
 
-    # Non-interactive (piped, or -p given) without env/config: use real $HOME
+    prompt = _resolve_prompt(args, passthrough)
     if prompt is None:
-        _launch_native_directly(agent_type)
+        _launch_native_directly(agent_type, passthrough)
         return
 
     adapter = _make_native_adapter(agent_type)
-    request = AgentRequest(task_prompt=prompt)
-    try:
-        result = adapter.run(request)
-    except Exception as exc:
-        print(f"Error executing agent: {exc}", file=sys.stderr)
-        sys.exit(1)
-    _print_result(result)
+    _execute_headless(adapter, prompt, passthrough)
 
 
 # --- main --------------------------------------------------------------------
@@ -1176,6 +1705,10 @@ def main() -> None:
 
     if command == "env":
         _handle_env(args)
+        return
+
+    if command == "auth":
+        _handle_auth(args)
         return
 
     # If ``command`` is ``"run"`` *or* the user passed top-level flags
@@ -1195,6 +1728,12 @@ def main() -> None:
     if agent_type in _NATIVE_AGENTS:
         _run_native_with_picker(args)
         return
+
+    if agent_type:
+        _fail(
+            f"unknown agent '{agent_type}'. Use one of {', '.join(_NATIVE_AGENTS)}, "
+            "or pass -c <config> for composite adapter names."
+        )
 
     # Nothing useful provided – show help.
     parser.print_help()
