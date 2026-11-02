@@ -13,7 +13,7 @@ import logging
 from pathlib import Path
 import subprocess
 import time
-from typing import Any
+from typing import Any, Callable
 
 from clippet.adapters.personas import format_skill_block
 from clippet.isolation import (
@@ -83,6 +83,9 @@ class BaseAdapter(ABC):
     async def run_async(self, request: AgentRequest) -> AgentResult:
         """Execute the agent asynchronously with the given request."""
         ...
+
+
+OutputCallback = Callable[[str], None]
 
 
 # ---------------------------------------------------------------------------
@@ -216,16 +219,18 @@ class BaseSubprocessAdapter(BaseAdapter):
                 self._build_credential_set(isolation).inject(isolated_env)
                 sync = CredentialSyncBack(isolation.sync_back)
                 sync.snapshot(isolated_env)
-                result = self._execute_sync(
-                    command=command,
-                    cwd=cwd,
-                    stdin_bytes=stdin_bytes,
-                    env=isolated_env.env,
-                    timeout=request.timeout,
-                    start_time=start_time,
-                )
-                self._finalize_sync(sync, isolated_env)
-                return result
+                try:
+                    return self._execute_sync(
+                        command=command,
+                        cwd=cwd,
+                        stdin_bytes=stdin_bytes,
+                        env=isolated_env.env,
+                        timeout=request.timeout,
+                        start_time=start_time,
+                    )
+                finally:
+                    # Also on Ctrl-C: a refreshed login must outlive the temp HOME.
+                    self._finalize_sync(sync, isolated_env)
         except Exception as e:
             return AgentResult(
                 raw_output="",
@@ -234,14 +239,23 @@ class BaseSubprocessAdapter(BaseAdapter):
                 error_message=f"Failed to prepare isolated environment: {e}",
             )
 
-    async def run_async(self, request: AgentRequest) -> AgentResult:
+    async def run_async(
+        self,
+        request: AgentRequest,
+        on_output: OutputCallback | None = None,
+    ) -> AgentResult:
         """Execute the agent asynchronously with the given request.
 
         Args:
             request: The agent request containing task and configuration.
+            on_output: Called with each line of the agent's stdout as it
+                arrives (for example Codex ``--json`` events), so a caller can
+                show progress before the run ends.  Streaming runs do not hand
+                the caller's stdin to the agent.
 
         Returns:
-            AgentResult with execution results.
+            AgentResult with execution results.  Cancelling the call kills the
+            agent process.
         """
 
         start_time = time.monotonic()
@@ -260,6 +274,7 @@ class BaseSubprocessAdapter(BaseAdapter):
                 env=None,
                 timeout=request.timeout,
                 start_time=start_time,
+                on_output=on_output,
             )
 
         try:
@@ -267,16 +282,20 @@ class BaseSubprocessAdapter(BaseAdapter):
                 self._build_credential_set(isolation).inject(isolated_env)
                 sync = CredentialSyncBack(isolation.sync_back)
                 sync.snapshot(isolated_env)
-                result = await self._execute_async(
-                    command=command,
-                    cwd=cwd,
-                    stdin_bytes=stdin_bytes,
-                    env=isolated_env.env,
-                    timeout=request.timeout,
-                    start_time=start_time,
-                )
-                self._finalize_sync(sync, isolated_env)
-                return result
+                try:
+                    return await self._execute_async(
+                        command=command,
+                        cwd=cwd,
+                        stdin_bytes=stdin_bytes,
+                        env=isolated_env.env,
+                        timeout=request.timeout,
+                        start_time=start_time,
+                        on_output=on_output,
+                    )
+                finally:
+                    # Also when the run is cancelled: a refreshed login must
+                    # outlive the temp HOME.
+                    self._finalize_sync(sync, isolated_env)
         except Exception as e:
             return AgentResult(
                 raw_output="",
@@ -424,15 +443,22 @@ class BaseSubprocessAdapter(BaseAdapter):
         env: dict[str, str] | None,
         timeout: int,
         start_time: float,
+        on_output: OutputCallback | None = None,
     ) -> AgentResult:
         """Run the subprocess asynchronously and parse its output."""
 
+        if stdin_bytes:
+            stdin = asyncio.subprocess.PIPE
+        elif on_output is not None:
+            stdin = asyncio.subprocess.DEVNULL
+        else:
+            stdin = None
         try:
             process = await asyncio.create_subprocess_exec(
                 *command,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                stdin=asyncio.subprocess.PIPE if stdin_bytes else None,
+                stdin=stdin,
                 cwd=cwd,
                 env=env,
             )
@@ -459,19 +485,22 @@ class BaseSubprocessAdapter(BaseAdapter):
             )
 
         try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(input=stdin_bytes),
-                timeout=timeout,
-            )
+            if on_output is None:
+                exchange = process.communicate(input=stdin_bytes)
+            else:
+                exchange = _stream_process(process, stdin_bytes, on_output)
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(exchange, timeout=timeout)
         except asyncio.TimeoutError:
-            process.kill()
-            await process.communicate()
+            await _kill(process)
             return AgentResult(
                 raw_output="",
                 is_success=False,
                 execution_time=time.monotonic() - start_time,
                 error_message=f"Process timed out after {timeout} seconds",
             )
+        except asyncio.CancelledError:
+            await _kill(process)
+            raise
         except Exception as e:
             process.kill()
             try:
@@ -516,6 +545,69 @@ class BaseSubprocessAdapter(BaseAdapter):
                 execution_time=execution_time,
                 error_message=f"Failed to parse output: {e}",
             )
+
+
+async def _kill(process: asyncio.subprocess.Process) -> None:
+    """Stop *process* and reap it (bounded, so a stuck child cannot hang us)."""
+
+    if process.returncode is None:
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
+    try:
+        await asyncio.wait_for(process.wait(), timeout=5)
+    except (asyncio.TimeoutError, ProcessLookupError):  # pragma: no cover - best effort
+        pass
+
+
+async def _stream_process(
+    process: asyncio.subprocess.Process,
+    stdin_bytes: bytes | None,
+    on_output: OutputCallback,
+) -> tuple[bytes, bytes]:
+    """Collect stdout/stderr like ``communicate()``, passing stdout on line by line."""
+
+    async def feed() -> None:
+        if process.stdin is None:
+            return
+        try:
+            if stdin_bytes:
+                process.stdin.write(stdin_bytes)
+                await process.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            process.stdin.close()
+
+    def emit(raw: bytes) -> None:
+        try:
+            on_output(raw.decode("utf-8", errors="replace").rstrip("\r"))
+        except Exception:  # noqa: BLE001 - a broken listener must not break the run
+            logger.exception("on_output callback failed")
+
+    async def pump(stream: asyncio.StreamReader | None, sink: list[bytes], lines: bool) -> None:
+        if stream is None:
+            return
+        pending = b""
+        while True:
+            chunk = await stream.read(65536)
+            if not chunk:
+                break
+            sink.append(chunk)
+            if lines:
+                pending += chunk
+                *complete, pending = pending.split(b"\n")
+                for line in complete:
+                    emit(line)
+        if lines and pending:
+            emit(pending)
+
+    out: list[bytes] = []
+    err: list[bytes] = []
+    await asyncio.gather(feed(), pump(process.stdout, out, True), pump(process.stderr, err, False))
+    await process.wait()
+    return b"".join(out), b"".join(err)
 
 
 def create_isolated_environment(
