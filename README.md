@@ -54,7 +54,7 @@ clippet -e work codex -c model_reasoning_effort=high
 
 ## 2. Terminal UI
 
-`clippet tui` — or plain `clippet` in a terminal — opens a full-screen UI in the same hand-drawn paper palette as these pictures. It needs the `tui` extra: `pip install 'clippet[tui]'`.
+`clippet tui` — or plain `clippet` in a terminal — opens a full-screen UI in the same hand-drawn paper palette as these pictures. It needs the `tui` extra (see [Installation](#7-installation)).
 
 ![clippet tui: the Envs place](resources/tui-envs.svg)
 
@@ -84,7 +84,7 @@ A HOME env is a persistent fake `$HOME` at `~/.clippet/envs/<name>/`. CLIppet la
 clippet env create work --from-current     # copy your agent *configuration* (no logins)
 clippet -e work codex login                # log in once inside the env
 clippet -e work codex                      # from now on: always this account
-clippet -e personal codex &  clippet -e work codex &   # parallel, fully isolated
+clippet -e personal codex                  # meanwhile, in a second terminal: a second account
 ```
 
 What `--from-current` copies — and what it deliberately does not:
@@ -129,7 +129,7 @@ Supported Codex credential sources:
 | Source | How to pass it | Notes |
 |--------|----------------|-------|
 | Codex `auth.json` | path to the file, a HOME dir, or a `CODEX_HOME` dir | ChatGPT login, API key, PAT / agent-identity files are passed through verbatim |
-| Cockpit Tools live store | `cockpit`, `cockpit:<dir>`, or the data dir (`~/.antigravity_cockpit`) | read-only; decrypting needs `pip install 'clippet[cockpit]'` |
+| Cockpit Tools live store | `cockpit`, `cockpit:<dir>`, or the data dir (`~/.antigravity_cockpit`) | read-only; decrypting needs the `cockpit` extra |
 | Cockpit Tools export / auto-backup | `cockpit-tools.data-transfer` / `account-transfer` JSON | only the Codex platform is read |
 | sub2api account export | `sub2api-account-*.json` | only `platform: openai` accounts; Claude/Gemini entries are ignored |
 | CLIProxyAPI token file | `codex-*.json` (`"type": "codex"`) | the separate `siwc` token set is never used |
@@ -283,18 +283,14 @@ CLIppet solves all of this with a single `adapter.run(request)` call — and the
 
 ## 7. Installation
 
-```bash
-pip install clippet
-pip install 'clippet[cockpit]'   # + reading the Cockpit Tools account store
-pip install 'clippet[tui]'       # + the terminal UI (clippet tui)
-pip install 'clippet[api]'       # + OpenAIAdapter
-```
-
-For development:
+CLIppet is not on PyPI yet, so install it from GitHub:
 
 ```bash
-pip install 'clippet[dev]'
+pip install "clippet @ git+https://github.com/FanBB2333/CLIppet.git"
+pip install "clippet[tui,cockpit] @ git+https://github.com/FanBB2333/CLIppet.git"   # with extras
 ```
+
+The extras are `cockpit` (reading the Cockpit Tools account store), `tui` (the terminal UI, `clippet tui`) and `api` (`OpenAIAdapter`). For development, see [Development](#15-development).
 
 > Requires Python 3.10+
 
