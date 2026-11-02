@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import asyncio
+import logging
 from pathlib import Path
 import subprocess
 import time
@@ -16,13 +17,42 @@ from typing import Any
 
 from clippet.adapters.personas import format_skill_block
 from clippet.isolation import (
+    ContentCredentialProvider,
     CredentialSet,
+    CredentialSyncBack,
     DirectoryCopyProvider,
     EnvVarCredentialProvider,
     FileCredentialProvider,
     IsolatedEnvironment,
+    scrub_patterns_for,
 )
 from clippet.models import AgentRequest, AgentResult, IsolationConfig
+
+logger = logging.getLogger("clippet")
+
+
+def render_extra_args(extra_args: dict[str, Any] | None) -> list[str]:
+    """Render ``AgentRequest.extra_args`` into CLI flags.
+
+    * keys already starting with ``-`` are used verbatim, other keys become
+      ``--key-name`` (underscores turned into dashes);
+    * ``True`` emits the bare flag, ``False`` / ``None`` emit nothing;
+    * lists/tuples repeat the flag once per value.
+    """
+
+    rendered: list[str] = []
+    for key, value in (extra_args or {}).items():
+        flag = key if key.startswith("-") else f"--{key.replace('_', '-')}"
+        if value is True:
+            rendered.append(flag)
+        elif value is False or value is None:
+            continue
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                rendered.extend([flag, str(item)])
+        else:
+            rendered.extend([flag, str(value)])
+    return rendered
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +101,10 @@ class BaseSubprocessAdapter(BaseAdapter):
     Optionally override:
         - get_stdin_input: method to provide stdin input for the subprocess
     """
+
+    #: Agent key used to decide which inherited environment variables are
+    #: dropped in isolated runs (see :data:`clippet.isolation.AGENT_IDENTITY_ENV_VARS`).
+    isolation_agent: str | None = None
 
     def __init__(self, **kwargs: Any) -> None:
         """Initialize the adapter with optional configuration.
@@ -180,7 +214,9 @@ class BaseSubprocessAdapter(BaseAdapter):
         try:
             with self._create_isolated_environment(isolation) as isolated_env:
                 self._build_credential_set(isolation).inject(isolated_env)
-                return self._execute_sync(
+                sync = CredentialSyncBack(isolation.sync_back)
+                sync.snapshot(isolated_env)
+                result = self._execute_sync(
                     command=command,
                     cwd=cwd,
                     stdin_bytes=stdin_bytes,
@@ -188,6 +224,8 @@ class BaseSubprocessAdapter(BaseAdapter):
                     timeout=request.timeout,
                     start_time=start_time,
                 )
+                self._finalize_sync(sync, isolated_env)
+                return result
         except Exception as e:
             return AgentResult(
                 raw_output="",
@@ -227,7 +265,9 @@ class BaseSubprocessAdapter(BaseAdapter):
         try:
             with self._create_isolated_environment(isolation) as isolated_env:
                 self._build_credential_set(isolation).inject(isolated_env)
-                return await self._execute_async(
+                sync = CredentialSyncBack(isolation.sync_back)
+                sync.snapshot(isolated_env)
+                result = await self._execute_async(
                     command=command,
                     cwd=cwd,
                     stdin_bytes=stdin_bytes,
@@ -235,6 +275,8 @@ class BaseSubprocessAdapter(BaseAdapter):
                     timeout=request.timeout,
                     start_time=start_time,
                 )
+                self._finalize_sync(sync, isolated_env)
+                return result
         except Exception as e:
             return AgentResult(
                 raw_output="",
@@ -283,27 +325,20 @@ class BaseSubprocessAdapter(BaseAdapter):
     ) -> IsolatedEnvironment:
         """Create an isolated runtime environment from request config."""
 
-        home_dir = Path(isolation.home_dir) if isolation.home_dir else None
-
-        return IsolatedEnvironment(
-            home_dir=home_dir,
-            persist=isolation.persist_sandbox,
-            env_whitelist=isolation.env_whitelist,
-            env_blacklist=isolation.env_blacklist,
-        )
+        return create_isolated_environment(isolation, self.isolation_agent)
 
     def _build_credential_set(self, isolation: IsolationConfig) -> CredentialSet:
         """Build credential providers for an isolation config."""
 
-        providers = []
+        return build_credential_set(isolation)
 
-        if isolation.credential_files:
-            providers.append(FileCredentialProvider(isolation.credential_files))
-
-        if isolation.env_overrides:
-            providers.append(EnvVarCredentialProvider(isolation.env_overrides))
-
-        return CredentialSet(providers)
+    @staticmethod
+    def _finalize_sync(sync: CredentialSyncBack, env: IsolatedEnvironment) -> None:
+        try:
+            for destination in sync.finalize(env):
+                logger.info("Synced refreshed credentials back to %s", destination)
+        except OSError as exc:  # pragma: no cover - best effort
+            logger.warning("Could not sync credentials back: %s", exc)
 
     def _execute_sync(
         self,
@@ -481,3 +516,38 @@ class BaseSubprocessAdapter(BaseAdapter):
                 execution_time=execution_time,
                 error_message=f"Failed to parse output: {e}",
             )
+
+
+def create_isolated_environment(
+    isolation: IsolationConfig,
+    agent: str | None = None,
+) -> IsolatedEnvironment:
+    """Build an :class:`IsolatedEnvironment` for *isolation* and *agent*."""
+
+    home_dir = Path(isolation.home_dir) if isolation.home_dir else None
+    scrub = scrub_patterns_for(agent) if isolation.scrub_agent_env else ()
+
+    return IsolatedEnvironment(
+        home_dir=home_dir,
+        persist=isolation.persist_sandbox,
+        env_whitelist=isolation.env_whitelist,
+        env_blacklist=isolation.env_blacklist,
+        scrub_env=scrub,
+    )
+
+
+def build_credential_set(isolation: IsolationConfig) -> CredentialSet:
+    """Build the credential providers described by an isolation config."""
+
+    providers = []
+
+    if isolation.credential_files:
+        providers.append(FileCredentialProvider(isolation.credential_files))
+
+    if isolation.credential_contents:
+        providers.append(ContentCredentialProvider(isolation.credential_contents))
+
+    if isolation.env_overrides:
+        providers.append(EnvVarCredentialProvider(isolation.env_overrides))
+
+    return CredentialSet(providers)

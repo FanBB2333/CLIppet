@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 
 class ToolCallRecord(BaseModel):
@@ -27,6 +27,9 @@ class AgentRequest(BaseModel):
     allowed_tools: list[str] | None = None
     injected_skills: list[str] = Field(default_factory=list)
     extra_args: dict[str, Any] | None = None
+    # Raw arguments forwarded verbatim to the underlying CLI (placed before
+    # the prompt for CLIs that take the prompt as a positional argument).
+    extra_cli_args: list[str] = Field(default_factory=list)
     isolation: "IsolationConfig | None" = None
 
 
@@ -39,6 +42,20 @@ class AgentResult(BaseModel):
     tool_calls: list[ToolCallRecord] = Field(default_factory=list)
     steps_count: int = 0
     error_message: str | None = None
+    # Final answer text extracted from the agent's native output format.
+    # ``None`` means the adapter could not separate it from ``raw_output``.
+    output_text: str | None = None
+    # Token usage as reported by the agent (keys are agent-specific, e.g.
+    # ``input_tokens`` / ``output_tokens``).
+    usage: dict[str, Any] | None = None
+    # Agent-native session/thread identifier, when reported.
+    session_id: str | None = None
+
+    @property
+    def text(self) -> str:
+        """Return the best human-readable answer: ``output_text`` or raw output."""
+
+        return self.output_text if self.output_text is not None else self.raw_output
 
 
 class IsolationConfig(BaseModel):
@@ -47,20 +64,33 @@ class IsolationConfig(BaseModel):
     Two isolation modes are supported:
 
     1. **Single-file mode** (default): A temporary HOME directory is created and
-       ``credential_files`` are copied into it.  Any ``env_overrides`` are applied
-       on top.
+       ``credential_files`` / ``credential_contents`` are written into it.  Any
+       ``env_overrides`` are applied on top.
     2. **Second-home mode**: Set ``home_dir`` to a persistent directory path that
        already contains the full config hierarchy (``.claude/``, ``.codex/``, etc.).
        The directory is used *directly* as ``$HOME`` without copying or creating a
        temporary directory and is **never** deleted by CLIppet.
+
+    Whenever a run is isolated, environment variables that point an agent at a
+    different config directory or identity (``CODEX_HOME``, ``OPENAI_API_KEY``,
+    ``ANTHROPIC_*``, ``XDG_CONFIG_HOME``, ...) are removed from the inherited
+    environment so the selected HOME really decides which account is used.  Set
+    ``scrub_agent_env=False`` to keep them.
     """
 
     home_dir: str | None = None
     credential_files: dict[str, str] = Field(default_factory=dict)
+    # Generated credential files (sandbox-relative path -> file content).  Used
+    # when a credential had to be converted into the agent's native format.
+    credential_contents: dict[str, SecretStr] = Field(default_factory=dict)
+    # After the run, copy these sandbox-relative files back to the given
+    # absolute paths *if the agent changed them* (e.g. refreshed OAuth tokens).
+    sync_back: dict[str, str] = Field(default_factory=dict)
     env_overrides: dict[str, str] = Field(default_factory=dict)
     env_whitelist: list[str] | None = None
     env_blacklist: list[str] | None = None
     persist_sandbox: bool = False
+    scrub_agent_env: bool = True
 
     @property
     def is_second_home(self) -> bool:
@@ -75,17 +105,23 @@ class IsolationConfig(BaseModel):
         if "home_dir" in override.model_fields_set:
             merged_data["home_dir"] = override.home_dir
 
-        if "credential_files" in override.model_fields_set:
-            credential_files = dict(self.credential_files)
-            credential_files.update(override.credential_files)
-            merged_data["credential_files"] = credential_files
+        for field_name in (
+            "credential_files",
+            "credential_contents",
+            "sync_back",
+            "env_overrides",
+        ):
+            if field_name in override.model_fields_set:
+                combined = dict(getattr(self, field_name))
+                combined.update(getattr(override, field_name))
+                merged_data[field_name] = combined
 
-        if "env_overrides" in override.model_fields_set:
-            env_overrides = dict(self.env_overrides)
-            env_overrides.update(override.env_overrides)
-            merged_data["env_overrides"] = env_overrides
-
-        for field_name in ("env_whitelist", "env_blacklist", "persist_sandbox"):
+        for field_name in (
+            "env_whitelist",
+            "env_blacklist",
+            "persist_sandbox",
+            "scrub_agent_env",
+        ):
             if field_name in override.model_fields_set:
                 merged_data[field_name] = getattr(override, field_name)
 
