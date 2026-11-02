@@ -129,6 +129,8 @@ _SPECS: tuple[AgentSpec, ...] = (
             "OPENAI_ORGANIZATION",
             "OPENAI_PROJECT",
             "OPENAI_PROJECT_ID",
+            # set inside the Codex app (its terminal, its agents): another profile's folders
+            "CODEX_ELECTRON_*",
         ),
         resume=("resume", "{id}"),
         login="codex login",
@@ -136,12 +138,11 @@ _SPECS: tuple[AgentSpec, ...] = (
         # only in `codex exec`), but a custom provider's env_key it does.
         endpoint=EndpointSpec(
             apis={"openai-responses": {}},
-            key=("CLIPPET_CODEX_API_KEY",),
             file="codex",
             note=(
-                "Written to the env's config.toml as model_provider \"clippet\" (Responses API), whose key "
-                "Codex reads from CLIPPET_CODEX_API_KEY. An API-key login imported with a base URL uses "
-                "openai_base_url there instead."
+                "Written to the env's config.toml as model_provider \"clippet\" (Responses API), which reads "
+                "its key from the variable you named (the Codex app from your login shell). An API-key login "
+                "imported with a base URL uses openai_base_url there instead."
             ),
         ),
         letter="X",
@@ -472,11 +473,10 @@ _SPECS += (
         runtime=(".local/share/pi-node",),
         endpoint=EndpointSpec(
             apis={"openai": {}, "openai-responses": {}, "anthropic": {}, "gemini": {}},
-            key=("CLIPPET_PI_API_KEY",),
             file="pi",
             note=(
-                "Written to the env's models.json as provider \"clippet\" (its key read from "
-                "CLIPPET_PI_API_KEY) and made the default in settings.json."
+                "Written to the env's models.json as provider \"clippet\", which reads its key from the "
+                "variable you named, and made the default in settings.json."
             ),
         ),
         letter="π",

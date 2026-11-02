@@ -75,6 +75,7 @@ class EnvsPlace(Place):
 
     BINDINGS = [
         Binding("x", "launch('codex')", "codex here", show=False),
+        Binding("g", "open_app", "Codex app", show=False),
         Binding("r", "resume_last", "resume last", show=False),
         Binding("s", "pick_session", "sessions", show=False),
         Binding("space", "mark", "mark", show=False),
@@ -114,13 +115,14 @@ class EnvsPlace(Place):
         table.add_column("agents", key="agents", width=7)
 
     def hints(self) -> list[tuple[str, str]]:
-        return [("Enter", "launch"), ("x", "codex"), ("r", "resume"), ("Space", "mark"), ("n", "new"),
-                ("a", "import account")]
+        return [("Enter", "launch"), ("x", "codex"), ("g", "Codex app"), ("r", "resume"), ("Space", "mark"),
+                ("n", "new"), ("a", "import account")]
 
     def help_rows(self) -> list[tuple[str, str]]:
         return [
             ("Enter", "launch an agent here: shows who it runs as, its HOME and folder; Enter again starts it"),
             ("x", "launch Codex here right away, without asking"),
+            ("g", "open the Codex app as this env, or as every marked env, each its own instance (macOS)"),
             ("r / s", "resume the newest Codex session / pick one: shows which, as whom and where first"),
             ("Space", "mark envs: a prompt then runs in every marked env"),
             ("n / c", "new env / clone this one"),
@@ -585,6 +587,35 @@ class EnvsPlace(Place):
             self.app.notify("Pick a HOME env first (or press 2 to import into a new one).", severity="warning")
             return
         self.clippet.pick_account_for(env.name)
+
+    def action_open_app(self) -> None:
+        """The Codex desktop app as the selected env, or as each marked env, side by side."""
+
+        envs = [env for env in (self.clippet.env_named(name) for name in self.clippet.targets()) if env is not None]
+        for env in envs:
+            if env.is_base:
+                self.app.notify("start it from the Dock: base is your real HOME", title="Codex app")
+            elif env.kind != "home" or env.path is None or not env.exists:
+                self.app.notify("a config-file env cannot open the app", title=env.name, severity="warning")
+            else:
+                self.run_worker(lambda env=env: self._open_app(env), thread=True, group=f"app-{env.name}",
+                                exit_on_error=False)
+
+    def _open_app(self, env: EnvView) -> None:
+        from clippet.desktop import DesktopError, open_app
+        from clippet.tui.runs import prepare_env
+
+        try:
+            opened = open_app(env.path, [str(self.clippet.workspace)], before_launch=lambda: prepare_env(env, "codex"))
+        except (DesktopError, ValueError, OSError) as exc:
+            self.app.call_from_thread(self.app.notify, str(exc), title=f"Codex app · {env.name}",
+                                      severity="error", timeout=12)
+            return
+        lead = "already open: brought to the front" if opened.running else f"opened as {env.name}"
+        for line in [lead, *opened.notes]:
+            warn = line.startswith(("opened although", "warning", "could not"))
+            self.app.call_from_thread(self.app.notify, line, title=f"Codex app · {env.name}",
+                                      severity="warning" if warn else "information", timeout=8)
 
     def action_open_folder(self) -> None:
         env = self.current()

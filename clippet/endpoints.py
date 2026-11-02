@@ -179,19 +179,24 @@ def set_endpoint(
     variables: dict[str, str] = dict(endpoint.apis[api])
     if endpoint.base_url:
         variables[endpoint.base_url] = url
-    if key_env:
+    if key_env and endpoint.key:
         variables[endpoint.key[0]] = "${" + key_env + "}"
+    elif key_env:
+        # the agent's own file names the variable (Codex's env_key, pi's
+        # "$VAR"), so the Codex app finds it in your login shell too; the
+        # env only keeps it from being dropped in its runs
+        variables[key_env] = "${" + key_env + "}"
     if model and endpoint.model:
         variables[endpoint.model] = model
 
+    stale = endpoint_variables(endpoint) | {_file_key(home, endpoint)} - {""}
     if endpoint.file == "codex":
-        _write_codex_provider(home, url, keyed=bool(key_env), model=model)
+        _write_codex_provider(home, url, key_env=key_env, model=model)
     elif endpoint.file == "pi":
-        _write_pi_provider(home, url, api=api, keyed=bool(key_env), model=model or "")
+        _write_pi_provider(home, url, api=api, key_env=key_env, model=model or "")
     if endpoint.settings is not None:
         _merge_json(home / endpoint.settings[0], endpoint.settings[1])
-    stale = endpoint_variables(endpoint) - variables.keys()
-    set_env_vars(name, spec.key, variables, unset=sorted(stale))
+    set_env_vars(name, spec.key, variables, unset=sorted(stale - variables.keys()))
 
     notes = [endpoint.note] if endpoint.note else []
     if model and not endpoint.model and not endpoint.file:
@@ -208,6 +213,7 @@ def clear_endpoint(name: str, agent: str) -> None:
     spec = _spec(agent)
     endpoint = spec.endpoint
     home = _home_of(name)
+    stale = endpoint_variables(endpoint) | {_file_key(home, endpoint)} - {""}
     if endpoint.file == "codex":
         _clear_codex_provider(home)
     elif endpoint.file == "pi":
@@ -220,7 +226,26 @@ def clear_endpoint(name: str, agent: str) -> None:
                 if data.get(key) == value:
                     data.pop(key)
             _write_json(home / path, data)
-    set_env_vars(name, spec.key, unset=sorted(endpoint_variables(endpoint)))
+    set_env_vars(name, spec.key, unset=sorted(stale))
+
+
+def _file_key(home: Path, endpoint: EndpointSpec) -> str:
+    """The variable the endpoint CLIppet wrote into the agent's own file takes its key from."""
+
+    if endpoint.file == "codex":
+        config = _read_toml(home / ".codex" / "config.toml") or {}
+        providers = config.get("model_providers") if isinstance(config.get("model_providers"), dict) else {}
+        provider = providers.get(PROVIDER_ID) if isinstance(providers.get(PROVIDER_ID), dict) else {}
+        env_key = provider.get("env_key")
+        return env_key if isinstance(env_key, str) else ""
+    if endpoint.file == "pi":
+        models = _read_json_quietly(home / ".pi" / "agent" / "models.json")
+        providers = models.get("providers") if isinstance(models, dict) else None
+        provider = providers.get(PROVIDER_ID) if isinstance(providers, dict) else None
+        api_key = provider.get("apiKey") if isinstance(provider, dict) else None
+        if isinstance(api_key, str) and api_key.startswith("$"):
+            return api_key.lstrip("${").rstrip("}")
+    return ""
 
 
 def _conflicts(home: Path, spec: AgentSpec) -> list[str]:
@@ -454,11 +479,11 @@ def _edit_toml(path: Path, edit) -> None:
         _write_private_file(path, after.encode("utf-8"))
 
 
-def _write_codex_provider(home: Path, url: str, *, keyed: bool, model: str | None) -> None:
+def _write_codex_provider(home: Path, url: str, *, key_env: str | None, model: str | None) -> None:
     host = urlparse(url).netloc or url
     body = [f"name = {json.dumps(host)}", f"base_url = {json.dumps(url)}"]
-    if keyed:
-        body.append(f"env_key = {json.dumps(_spec('codex').endpoint.key[0])}")
+    if key_env:
+        body.append(f"env_key = {json.dumps(key_env)}")
     body.append('wire_api = "responses"')
 
     def edit(text: str) -> str:
@@ -468,6 +493,24 @@ def _write_codex_provider(home: Path, url: str, *, keyed: bool, model: str | Non
         return _toml_set_table(text, f"model_providers.{PROVIDER_ID}", body)
 
     _edit_toml(home / ".codex" / "config.toml", edit)
+
+
+def read_codex_config(home: Path | str) -> dict[str, Any]:
+    """The Codex config.toml in the HOME at *home* ({} when there is none); refuses one that is not TOML."""
+
+    path = Path(home) / ".codex" / "config.toml"
+    if not path.is_file():
+        return {}
+    config = _read_toml(path)
+    if config is None:
+        raise ValueError(f"{path} is not valid TOML; edit it by hand")
+    return config
+
+
+def set_codex_config(home: Path | str, key: str, value: str | None) -> None:
+    """Set top-level *key* of the Codex config in the HOME at *home* to the TOML *value* (None: remove it)."""
+
+    _edit_toml(Path(home) / ".codex" / "config.toml", lambda text: _toml_set_top(text, key, value))
 
 
 def set_codex_base_url(home: Path | str, url: str | None) -> None:
@@ -505,7 +548,7 @@ def _clear_codex_provider(home: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _write_pi_provider(home: Path, url: str, *, api: str, keyed: bool, model: str) -> None:
+def _write_pi_provider(home: Path, url: str, *, api: str, key_env: str | None, model: str) -> None:
     models_path = home / ".pi" / "agent" / "models.json"
     models = _read_json(models_path) or {}
     providers = models.get("providers")
@@ -515,7 +558,7 @@ def _write_pi_provider(home: Path, url: str, *, api: str, keyed: bool, model: st
         "name": urlparse(url).netloc or url,
         "baseUrl": url,
         "api": _PI_APIS[api],
-        "apiKey": "$" + _spec("pi").endpoint.key[0] if keyed else _PI_NO_KEY,
+        "apiKey": "$" + key_env if key_env else _PI_NO_KEY,
         "models": [{"id": model}],
     }
     _write_json(models_path, models)

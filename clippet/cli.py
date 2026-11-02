@@ -572,6 +572,11 @@ def _prepare_home_env(name: str, profile: dict, agent_type: str | None) -> None:
 
     if agent_type not in (None, "codex"):
         return
+    from clippet.desktop import is_open
+
+    if isinstance(profile.get("codex_source"), dict) and profile["codex_source"].get("linked") and is_open(home_dir):
+        _note(f"env '{name}': its Codex app is open, so its login is not pulled now")
+        return
     result = sync_linked_codex_credential(name, profile)
     if result.action == "updated":
         _note(f"env '{name}': {result.message}")
@@ -920,6 +925,10 @@ def _handle_run(args: argparse.Namespace) -> None:
     if codex_config:
         codex_config = str(Path(codex_config).expanduser().resolve())
 
+    if agent_type == "codex" and passthrough[:1] == ["app"] and (getattr(args, "env", None) or getattr(args, "config", None)):
+        _open_codex_app(args, passthrough[1:])
+        return
+
     config_path = _resolve_config_path(args)
 
     # --- codex-config-only shortcut (no -c) --------------------------------
@@ -978,6 +987,49 @@ def _handle_run(args: argparse.Namespace) -> None:
         _run_native_config(
             config_path, config_format, agent_type, prompt, codex_config, account, passthrough,
         )
+
+
+def _open_codex_app(args: argparse.Namespace, app_args: list[str]) -> None:
+    """``clippet -e NAME codex app [PATH...]``: the Codex desktop app as env NAME, next to the others."""
+
+    from clippet.desktop import DesktopError, open_app
+
+    name: str | None = getattr(args, "env", None)
+    profile: dict | None = None
+    if name:
+        try:
+            profile = get_environment(name)
+        except KeyError as exc:
+            _fail(str(exc.args[0] if exc.args else exc))
+        if entry_type(profile) != ENV_TYPE_HOME or not profile.get("home_dir"):
+            _fail(f"env '{name}' is a config-file alias; the Codex app opens as a HOME env")
+        home = Path(profile["home_dir"])
+    else:
+        home = Path(args.config).expanduser()
+        if not home.is_dir():
+            _fail(
+                "the Codex app opens as a HOME env, not from a credential file: import it into one "
+                "('clippet env import NAME FILE'), then run 'clippet -e NAME codex app'"
+            )
+    options = [arg for arg in app_args if arg.startswith("-")]
+    if options:
+        _fail(f"clippet opens the app itself, so codex app's {' '.join(options)} does not apply here")
+
+    def before_launch() -> None:
+        if name and profile is not None:
+            _prepare_home_env(name, profile, "codex")  # shared dotfiles, a linked env's newest login
+
+    try:
+        opened = open_app(home, app_args or None, before_launch=before_launch)
+    except (DesktopError, ValueError, OSError) as exc:
+        _fail(str(exc))
+    who = f"env '{name}'" if name else str(home)
+    if opened.running:
+        _note(f"the Codex app is already open as {who} (pid {opened.running[0]}): brought it to the front")
+    else:
+        _note(f"opened {opened.app.name} as {who} (CODEX_HOME={home / '.codex'})")
+    for note in opened.notes:
+        _note(note)
 
 
 def _execute_headless(adapter, prompt: str, passthrough: list[str] | None) -> None:

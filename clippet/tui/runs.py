@@ -494,6 +494,12 @@ def prepare_env(env: EnvView, agent: str) -> list[str]:
         ensure_shared_links(env.path, [*env.share, *(spec.runtime if spec else ())])
     except OSError as exc:
         notes.append(f"could not link shared dotfiles: {exc}")
+    if agent == "codex" and env.linked:
+        from clippet.desktop import is_open
+
+        if is_open(env.path):
+            notes.append("its Codex app is open, so its login is not pulled now")
+            return notes
     if agent == "codex":
         result = sync_linked_codex_credential(env.name, env.profile)
         if result.action == "updated":

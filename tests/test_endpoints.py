@@ -159,11 +159,15 @@ class TestEndpoints:
         assert config["model_providers"]["clippet"] == {
             "name": "relay.example.com",
             "base_url": "https://relay.example.com/v1",
-            "env_key": "CLIPPET_CODEX_API_KEY",
+            "env_key": "RELAY_KEY",
             "wire_api": "responses",
         }
-        assert env_vars(get_environment("relay"), "codex") == {"CLIPPET_CODEX_API_KEY": "${RELAY_KEY}"}
+        # kept from being dropped in env runs; the Codex app reads it from the login shell
+        assert env_vars(get_environment("relay"), "codex") == {"RELAY_KEY": "${RELAY_KEY}"}
         assert endpoint_of(home, "codex").key == "$RELAY_KEY"
+
+        set_endpoint("relay", "codex", "https://relay.example.com/v1", key_env="OTHER_KEY")
+        assert env_vars(get_environment("relay"), "codex") == {"OTHER_KEY": "${OTHER_KEY}"}
 
         clear_endpoint("relay", "codex")
 
@@ -192,7 +196,7 @@ class TestEndpoints:
 
         set_endpoint("relay", "pi", "https://relay.example.com", api="anthropic", key_env="RELAY_KEY", model="m")
         provider = json.loads((home / ".pi" / "agent" / "models.json").read_text())["providers"]["clippet"]
-        assert (provider["api"], provider["apiKey"]) == ("anthropic-messages", "$CLIPPET_PI_API_KEY")
+        assert (provider["api"], provider["apiKey"]) == ("anthropic-messages", "$RELAY_KEY")
         assert endpoint_of(home, "pi").key == "$RELAY_KEY"
 
         clear_endpoint("relay", "pi")

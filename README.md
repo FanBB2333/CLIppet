@@ -239,6 +239,23 @@ clippet env endpoint relay claude --clear
 - An endpoint the agent itself names is honored too: an `env` block in the env's `.claude/settings.json`, Codex's `openai_base_url` (written when you `clippet env import` an API-key credential with a base URL), a `providers.json` for Copilot, a `.gemini/.env`. The TUI shows each agent's endpoint, model and key source in the env detail and before every launch.
 - Single-file mode keeps working for one-off runs: `clippet -c claude-settings.json` with an `env` block, a Codex API-key credential with a base URL, or a Gemini `.env`.
 
+### 3.7 The Codex app, one instance per env (macOS)
+
+```bash
+clippet -e work codex app ~/repos/project    # the Codex desktop app as env "work"
+clippet -e personal codex app                 # at the same time: a second instance, another account
+```
+
+In the TUI, `g` opens it as the selected env, or as every marked env.
+
+Each instance keeps Codex's state in the env's `.codex` (`CODEX_HOME`: login, config, sessions) and Electron's in the env's `.codex-desktop` (`CODEX_ELECTRON_USER_DATA_PATH` and `--user-data-dir`); the app you start from the Dock keeps using `~/.codex`. CLIppet starts it with `open -n`, the way the app starts separate instances of itself: an internal mechanism, not a documented interface (see `docs/codex-desktop-multi-account-research.md`).
+
+- CLIppet writes `cli_auth_credentials_store = "file"` into the env's `config.toml`, so a login made in that instance lands in the env's `auth.json`.
+- An env whose instance is already open is brought to the front instead of getting a second process on the same folders. While it is open, no CLIppet launch pulls a linked env's newest login into it.
+- The app must pass `codesign --verify --deep --strict` and be signed by OpenAI (team `2DC432GLL2`), as `codex app` requires; `CLIPPET_CODEX_APP_UNVERIFIED=1` opens it anyway. CLIppet finds it by its bundle id (`com.openai.codex`, installed as Codex.app or ChatGPT.app); `CLIPPET_CODEX_APP` points at another copy.
+- The app reads your login shell's variables itself, so the key of an endpoint (§3.6) must be exported there (for example in `~/.secrets.zsh`).
+- Not yet verified end to end with two real ChatGPT accounts in two windows. macOS only.
+
 ---
 
 ## 4. Project-level `.clippet.json`
@@ -594,6 +611,7 @@ clippet/
 │   └── extractors.py    # JSON/text output parsers
 ├── agents.py            # What differs between the agent CLIs: files, logins, variables, resume, endpoints
 ├── endpoints.py         # Third-party API endpoints per env and agent
+├── desktop.py           # The Codex desktop app, one instance per env (macOS)
 ├── isolation.py         # Sandbox environments, credential providers, env scrubbing
 ├── models.py            # AgentRequest, AgentResult, IsolationConfig, ToolCallRecord
 └── protocols.py         # ClippetAdapter protocol
