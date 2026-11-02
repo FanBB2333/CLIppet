@@ -800,6 +800,164 @@ def draw_isolation(letters: Lettering) -> str:
                  "结束后把刷新过的登录写回。")
 
 
+# --- architecture -------------------------------------------------------------
+
+
+def _layer(d: Drawing, x: float, y: float, w: float, h: float, name: str, about: str, module: str,
+           color: str, tint: str) -> None:
+    """A layer: a tinted shelf with its name, what it does and its package along the top."""
+
+    d.box(x, y, w, h, r=18, fill=tint, stroke=color, width=1.5, shadow=False, amp=1.6)
+    nw = d.text(name, x + 22, y + 34, 24, color=color)
+    room = w - 44 - nw - 14
+    if module:
+        room -= d.letters.width(module, 17) + 16
+        d.text(module, x + w - 22, y + 34, 17, color=BRAND_DEEP, anchor="end", hand=0.4)
+    if about:
+        d.text(about, x + 22 + nw + 14, y + 34, d.fit(about, 17, room), color=MUTED, hand=0.5)
+
+
+def _card(d: Drawing, x: float, y: float, w: float, h: float, title: str, module: str = "",
+          lines: tuple[str, ...] = (), *, color: str = INK, tilt: float = 0.0, dash: str | None = None,
+          size: float = 22) -> None:
+    """A module on a layer: its name, its file, and a line or two about it."""
+
+    d.box(x, y, w, h, r=12, fill=PAPER, width=1.8, tilt=tilt, dash=dash, shadow=dash is None)
+    t = tilt * 0.6
+    room = w - 36
+    if module:
+        room -= d.letters.width(module, 15.5) + 12
+        d.text(module, x + w - 18, y + 31, 15.5, color=BRAND_DEEP, anchor="end", tilt=t, hand=0.4)
+    d.text(title, x + 18, y + 31, d.fit(title, size, room), color=color, tilt=t, hand=0.7)
+    for i, line in enumerate(lines):
+        d.text(line, x + 18, y + 57 + i * 22, d.fit(line, 16, w - 36), color=MUTED, tilt=t, hand=0.45)
+
+
+def _flow(d: Drawing, x: float, y1: float, y2: float, label: str, *, color: str = INK, dash: str | None = None,
+          side: str = "right", at: float | None = None) -> None:
+    """A vertical arrow from y1 to y2 with what it carries written beside it (at baseline *at*)."""
+
+    d.arrow([(x, y1), (x + 4, (y1 + y2) / 2), (x, y2)], color=color, width=1.9 if dash else 2.0, head=11, dash=dash)
+    mid = at if at is not None else (y1 + y2) / 2 + 6
+    if side == "right":
+        d.text(label, x + 16, mid, 16.5, color=MUTED, hand=0.5)
+    else:
+        d.text(label, x - 14, mid, 16.5, color=MUTED, anchor="end", hand=0.5)
+
+
+def draw_architecture(letters: Lettering) -> str:
+    W, H = 1200, 1290
+    d = Drawing(W, H, letters, seed=73)
+    d.sheet()
+    d.text("Architecture", W / 2, 74, 40, color=INK, anchor="middle")
+    d.rule(W / 2 - 118, W / 2 + 118, 90, color=BRAND)
+    d.text("the modules in clippet/ and what calls what", W / 2, 124, 19, color=MUTED, anchor="middle", hand=0.5)
+
+    L, R = 40, 1160
+    spine = 416  # a run goes down here …
+    lane = 1118  # … and its result climbs back up here
+
+    # entry points
+    ay = 150
+    _layer(d, L, ay, R - L, 166, "Entry points", "where a run starts", "", BRAND_DEEP, "#f5e3d6")
+    entries = [
+        ("CLI", "cli.py", ("clippet -e work codex [args…]", "interactive, or -p for a headless run")),
+        ("TUI", "tui/", ("clippet tui", "envs · accounts · runs · project · checks")),
+        ("Python SDK", "orchestrator.py", ("ClippetRunner · adapters", "execute · execute_parallel · run_async")),
+    ]
+    for i, (title, module, lines) in enumerate(entries):
+        _card(d, 62 + i * 366, ay + 52, 342, 98, title, module, lines, tilt=(-0.5, 0.4, -0.3)[i])
+
+    # identity, and the accounts it can draw on
+    by, bh = 372, 296
+    _layer(d, L, by, 632, bh, "Identity", "which HOME and login a run uses", "config/", WARN, "#f6ebd4")
+    identity = [
+        (".clippet.json", "project.py", ("pins an env per agent", "found from cwd up to the git root")),
+        ("HOME envs", "environments.py", ("~/.clippet/envs/<name>", "create · clone · import · sync")),
+        ("Composite config", "registry.py", ("YAML / JSON → named adapters", "→ a ClippetRunner")),
+        ("Detector", "detector.py", ("a file or a folder → its agent", "→ adapter + IsolationConfig")),
+    ]
+    for i, (title, module, lines) in enumerate(identity):
+        _card(d, 62 + (i % 2) * 307, by + 52 + (i // 2) * 118, 289, 102, title, module, lines,
+              tilt=(0.4, -0.5, -0.3, 0.5)[i])
+
+    ax, aw = 764, 316
+    _layer(d, ax, by, aw, bh, "Accounts", "", "auth/", PLUM, "#efe7f1")
+    d.text("Codex logins in any format", ax + 22, by + 62, 16, color=MUTED, hand=0.5)
+    sources = [("Cockpit Tools store · cockpit.py", BRAND_DEEP), ("Cockpit export · sub2api", INK),
+               ("CLIProxyAPI · auth.json · tokens", INK)]
+    for i, (source, color) in enumerate(sources):
+        y = by + 92 + i * 25
+        d.text("·", ax + 24, y, 18, color=MUTED)
+        d.text(source, ax + 40, y, d.fit(source, 17.5, aw - 62), color=color, hand=0.5)
+    d.arrow([(ax + aw / 2, by + 150), (ax + aw / 2 + 4, by + 162), (ax + aw / 2, by + 174)], color=PLUM,
+            width=1.8, head=9)
+    cx, cy, cw = ax + 18, by + 180, aw - 36
+    _card(d, cx, cy, cw, 100, "CodexCredential", "codex.py", ("→ native .codex/auth.json",
+                                                              "email · plan · expiry (jwt.py)"), tilt=0.4)
+    d.arrow([(cx - 4, cy + 22), (cx - 50, cy + 14), (cx - 80, by + 132), (662, by + 106)],
+            color=PLUM, width=1.8, head=10)
+    d.text("import · link", (672 + ax) / 2, by + 86, 15, color=PLUM, anchor="middle", hand=0.4)
+    d.arrow([(cx - 4, cy + 66), (cx - 52, cy + 72), (662, by + 228)], color=PLUM, width=1.8, head=10)
+    d.text("or -c file", (672 + ax) / 2, cy + 98, 15, color=PLUM, anchor="middle", hand=0.4)
+
+    # adapters
+    cy0 = 722
+    _layer(d, L, cy0, R - L, 236, "Adapters", "AgentRequest in, AgentResult out", "adapters/ · parsers/", INFO,
+           "#e6edf3")
+    bx, bw = 62, 578
+    _card(d, bx, cy0 + 52, bw, 168, "BaseSubprocessAdapter", "base.py",
+          ("AgentRequest → the agent's own flags, plus your arguments",
+           "run() · run_async(on_output=…) streams · cancel kills the agent"), tilt=-0.2)
+    chips = [("Claude", "claude.py"), ("Codex", "codex.py"), ("Gemini", "gemini.py"), ("QoderCLI", "qodercli.py")]
+    for i, (name, module) in enumerate(chips):
+        x = bx + 16 + i * 139
+        y = cy0 + 152
+        d.box(x, y, 129, 54, r=8, fill="#f7f0e4", width=1.4, shadow=False, tilt=(-1.0, 0.8, -0.6, 1.0)[i])
+        d.text(name, x + 12, y + 24, 19, color=AGENT_COLORS[name], hand=0.6)
+        d.text(module, x + 12, y + 44, 14.5, color=MUTED, hand=0.4)
+    _card(d, 660, cy0 + 52, 222, 168, "OpenAIAdapter", "api.py",
+          ("optional: clippet[api]", "calls the API itself:", "no CLI, no sandbox", "personas.py: personas"),
+          dash="2 7", size=21)
+    _card(d, 902, cy0 + 52, 236, 168, "Parsers", "extractors.py",
+          ("stdout · JSON events", "→ AgentResult:", "text · tool calls", "usage · session id"), tilt=0.3)
+
+    # the sandbox, with the agent inside it
+    dy0 = 1012
+    _layer(d, L, dy0, R - L, 214, "Sandbox", "one per run, around the agent process", "isolation.py", OK, "#e7eee0")
+    _card(d, 62, dy0 + 52, 578, 146, "IsolatedEnvironment", "", (
+        "HOME → the env (kept), or a temp dir (removed afterwards)",
+        "drops CODEX_HOME, OPENAI_API_KEY, ANTHROPIC_* … from the parent",
+        "credential providers write files (0600) and set env vars",
+        "CredentialSyncBack saves refreshed logins back to their source",
+    ), tilt=0.2)
+    d.arrow([(646, dy0 + 125), (676, dy0 + 121), (704, dy0 + 125)], color=INK, width=2.0, head=10)
+    d.text("spawns", 675, dy0 + 108, 15, color=MUTED, anchor="middle", hand=0.4)
+    d.text("agent CLIs · $HOME = the sandbox", 718, dy0 + 62, 16, color=MUTED, hand=0.5)
+    for i, agent in enumerate(("Claude", "Codex", "Gemini", "QoderCLI")):
+        x = 718 + (i % 2) * 213
+        y = dy0 + 74 + (i // 2) * 66
+        d.box(x, y, 199, 54, r=10, fill=NIGHT, width=2.0, tilt=(-0.8, 0.6, 0.5, -0.7)[i])
+        d.text("$", x + 18, y + 35, 21, color=NIGHT_MUTED, hand=0.4)
+        d.text(agent.lower(), x + 40, y + 35, 21, color=NIGHT_INK, hand=0.5)
+        d.ring(x + 176, y + 27, 6, color=AGENT_COLORS[agent], width=1.4, fill=AGENT_COLORS[agent])
+
+    # what goes down, and what comes back
+    _flow(d, spine, ay + 168, by - 4, "who to run as: -e env · -c file · .clippet.json")
+    _flow(d, spine, by + bh + 2, cy0 - 4, "an adapter, with its IsolationConfig")
+    _flow(d, spine, cy0 + 238, dy0 - 4, "its command + IsolationConfig")
+    _flow(d, 995, dy0 + 70, cy0 + 224, "stdout · JSON events, line by line", color=BRAND_DEEP, dash="1.5 7",
+          side="left", at=(cy0 + 238 + dy0 - 4) / 2 + 6)
+    _flow(d, lane, cy0 + 48, ay + 170, "AgentResult, back to the caller", color=BRAND_DEEP, dash="1.5 7",
+          side="left", at=(ay + 168 + by - 4) / 2 + 6)
+
+    d.text("shared types — models.py: AgentRequest · AgentResult · IsolationConfig · ToolCallRecord · "
+           "protocols.py: ClippetAdapter", W / 2, 1260, 16.5, color=MUTED, anchor="middle", hand=0.4)
+    return d.svg("CLIppet architecture", "The CLI, the TUI and the Python SDK pick an identity through config/ "
+                 "(Codex accounts come from auth/); an adapter turns the request into the agent's command; "
+                 "isolation.py runs the agent CLI in a sandbox HOME; parsers turn its output into an AgentResult.")
+
+
 # --- a frame for a terminal screenshot ----------------------------------------
 
 
@@ -925,7 +1083,7 @@ def main() -> None:
         return
     for name, draw in (("logo.svg", draw_logo), ("banner.svg", draw_banner),
                        ("how-it-works.svg", draw_how_it_works), ("accounts.svg", draw_accounts),
-                       ("isolation.svg", draw_isolation)):
+                       ("isolation.svg", draw_isolation), ("architecture.svg", draw_architecture)):
         target = args.out / name
         target.write_text(draw(letters), encoding="utf-8")
         print("wrote", target, f"({target.stat().st_size // 1024} KB)")

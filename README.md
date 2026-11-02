@@ -505,36 +505,51 @@ result = runner.execute("claude-personal", request)
 
 ## 14. Architecture
 
+![CLIppet's architecture](resources/architecture.svg)
+
+A run goes down the left of the picture and its result comes back up the right:
+
+- **Entry points**: the CLI, the TUI and the Python SDK; all three drive the same layers below.
+- **Identity** (`config/`): decides who the run is: a HOME env (`-e`), a credential file (`-c`), a `.clippet.json` pin, or a composite config. It builds the adapter, and that adapter carries the run's `IsolationConfig`.
+- **Accounts** (`auth/`): reads Codex logins from Cockpit Tools, sub2api, CLIProxyAPI or `auth.json` into one `CodexCredential`. These are imported or linked into envs, or used directly with `-c`.
+- **Adapters** (`adapters/`, `parsers/`): turn the `AgentRequest` and your passed-through arguments into the agent's own command, then turn its stdout or JSON events back into an `AgentResult`.
+- **Sandbox** (`isolation.py`): points `$HOME` at the env or a temp dir, drops inherited identity variables, writes credentials (0600), and saves refreshed logins back when the agent exits.
+
 ```
 clippet/
+├── cli.py               # The clippet command: run, env, auth, tui
 ├── __init__.py          # Public API
-├── models.py            # AgentRequest, AgentResult, IsolationConfig
-├── protocols.py         # ClippetAdapter protocol
 ├── orchestrator.py      # ClippetRunner (parallel dispatch)
-├── isolation.py         # Sandbox environments, credential providers, env scrubbing
-├── auth/
-│   ├── codex.py         # Codex credentials in every format → native auth.json
-│   ├── cockpit.py       # Cockpit Tools account store (read-only)
-│   └── jwt.py           # Local JWT claim decoding
 ├── tui/                 # clippet tui (Textual)
 │   ├── app.py           # masthead, ribbon, places, prompt box, one animation clock
 │   ├── views/           # Envs, Accounts, Runs, Project, Checks
 │   ├── data.py          # what the places show, read from CLIppet's own state
 │   ├── runs.py          # streamed headless runs, interactive launches
-│   └── look.py          # paper palettes and the hand-drawn mark in braille
+│   ├── widgets.py       # tables, panes and dialogs the places share
+│   ├── look.py          # paper palettes and the hand-drawn mark in braille
+│   └── anim.py          # star frames, gleam, breathe, tweens
+├── config/
+│   ├── project.py       # .clippet.json discovery
+│   ├── environments.py  # HOME envs, seeding, Codex account import/sync
+│   ├── registry.py      # YAML/JSON config & adapter registration
+│   └── detector.py      # Config/credential detection and adapter factories
+├── auth/
+│   ├── codex.py         # Codex credentials in every format → native auth.json
+│   ├── cockpit.py       # Cockpit Tools account store (read-only)
+│   └── jwt.py           # Local JWT claim decoding
 ├── adapters/
-│   ├── base.py          # BaseSubprocessAdapter
+│   ├── base.py          # BaseSubprocessAdapter: command, run/run_async, streaming, cancel
 │   ├── claude.py        # Claude Code CLI adapter
 │   ├── codex.py         # Codex CLI adapter (+ exec --json event parser)
+│   ├── gemini.py        # Gemini CLI adapter
 │   ├── qodercli.py      # QoderCLI adapter
-│   └── gemini.py        # Gemini CLI adapter
+│   ├── api.py           # OpenAIAdapter: calls the API directly (optional, clippet[api])
+│   └── personas.py      # Persona prompts and skill blocks
 ├── parsers/
 │   └── extractors.py    # JSON/text output parsers
-└── config/
-    ├── detector.py      # Config/credential detection and adapter factories
-    ├── environments.py  # HOME envs, seeding, Codex account import/sync
-    ├── project.py       # .clippet.json discovery
-    └── registry.py      # YAML/JSON config & adapter registration
+├── isolation.py         # Sandbox environments, credential providers, env scrubbing
+├── models.py            # AgentRequest, AgentResult, IsolationConfig, ToolCallRecord
+└── protocols.py         # ClippetAdapter protocol
 ```
 
 ### 14.1 Core Data Models
