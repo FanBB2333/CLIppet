@@ -68,6 +68,28 @@ def native_auth(email: str = "alice@example.com", account_id: str = "acct-alice"
     }
 
 
+def cockpit_quota(*windows: tuple[float, int, int], checked_at: int | None = None) -> dict:
+    """A Cockpit Tools ``quota`` block; each window is (used %, window minutes, seconds until it resets)."""
+
+    now = checked_at or int(time.time())
+    raw = [
+        {"used_percent": used, "limit_window_seconds": minutes * 60, "reset_after_seconds": after,
+         "reset_at": now + after}
+        for used, minutes, after in windows
+    ]
+    quota: dict[str, Any] = {"raw_data": {"plan_type": "plus", "rate_limit": {
+        "allowed": True, "limit_reached": False,
+        "primary_window": raw[0] if raw else None,
+        "secondary_window": raw[1] if len(raw) > 1 else None,
+    }}}
+    for prefix, window in zip(("hourly", "weekly"), raw):  # Cockpit's summary: the share left
+        quota[f"{prefix}_percentage"] = 100 - window["used_percent"]
+        quota[f"{prefix}_window_minutes"] = window["limit_window_seconds"] // 60
+        quota[f"{prefix}_reset_time"] = window["reset_at"]
+        quota[f"{prefix}_window_present"] = True
+    return quota
+
+
 def cockpit_account(
     email: str,
     account_id: str,
@@ -75,6 +97,8 @@ def cockpit_account(
     cockpit_id: str | None = None,
     requires_reauth: bool | None = None,
     token_updated_at: int | None = None,
+    quota: dict | None = None,
+    usage_updated_at: int | None = None,
     **kw,
 ) -> dict:
     tokens = openai_tokens(email, account_id, **kw)
@@ -89,8 +113,10 @@ def cockpit_account(
         "token_generation": 3,
         "token_updated_at": token_updated_at or int(time.time()) - 7200,
         "token_source_mode": "managed",
-        "quota": {"hourly_percentage": 10},
+        "quota": quota if quota is not None else {"hourly_percentage": 10},
     }
+    if usage_updated_at is not None:
+        entry["usage_updated_at"] = usage_updated_at
     if requires_reauth is not None:
         entry["requires_reauth"] = requires_reauth
         entry["reauth_reason"] = "revoked" if requires_reauth else None

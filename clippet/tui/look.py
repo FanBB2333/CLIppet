@@ -15,10 +15,11 @@ from rich.cells import cell_len
 from rich.text import Text
 from textual.theme import Theme
 
-from clippet.tui.anim import breathe, mix, star
+from clippet.tui.anim import bar, breathe, mix, star
 
 if TYPE_CHECKING:
     from clippet.auth.codex import CodexCredential
+    from clippet.auth.quota import QuotaReading
 
 PALETTES: dict[str, dict[str, str]] = {
     "clippet": dict(
@@ -211,6 +212,60 @@ def moment(value: datetime | None) -> str:
     if value is None:
         return "—"
     return f"{value.astimezone():%Y-%m-%d %H:%M} ({relative(value)})"
+
+
+def span(value: datetime, now: datetime | None = None) -> str:
+    """in 2d 3h · in 4h 10m · in 25m · 5h ago: like relative(), to two units."""
+
+    now = now or datetime.now(timezone.utc)
+    seconds = (value - now).total_seconds()
+    whole = int(abs(seconds))
+    if whole < 60:
+        return "now"
+    days, rest = divmod(whole, 86400)
+    hours, minutes = rest // 3600, rest % 3600 // 60
+    if days:
+        text = f"{days}d {hours}h" if hours else f"{days}d"
+    elif hours:
+        text = f"{hours}h {minutes}m" if minutes else f"{hours}h"
+    else:
+        text = f"{minutes}m"
+    return f"in {text}" if seconds >= 0 else f"{text} ago"
+
+
+def quota_style(left: float, p: dict[str, str]) -> str:
+    return p["bad"] if left <= 0.05 else p["warn"] if left <= 0.2 else p["ok"]
+
+
+def quota_cell(reading: QuotaReading | None, p: dict[str, str], now: datetime | None = None) -> Text:
+    """The share left in the tightest window, for a table."""
+
+    if reading is None:
+        return Text("—", style=p["faint"])
+    left = reading.left(now)
+    return Text(f"{left:.0%}", style=quota_style(left, p))
+
+
+def quota_lines(reading: QuotaReading, p: dict[str, str], now: datetime | None = None) -> list[Text]:
+    """A bar of what is left in each window and when it starts over, then where the reading came from."""
+
+    from clippet.auth.quota import SOURCE_WORDS
+
+    now = now or datetime.now(timezone.utc)
+    lines = []
+    for window in reading.windows:
+        left = window.left(now)
+        line = Text(f"{window.name:<5}", style=p["muted"])
+        line.append_text(bar(left, 10, quota_style(left, p), p["raised"]))
+        line.append(f" {left:>4.0%} left", style=p["ink"] if left > 0.05 else p["bad"])
+        if window.resets_at is not None:
+            verb = "reset" if window.has_reset(now) else "resets"
+            line.append(f" · {verb} {span(window.resets_at, now)}", style=p["faint"])
+        lines.append(line)
+    source = SOURCE_WORDS.get(reading.source, reading.source)
+    when = f"as of {relative(reading.taken_at, now)} · " if reading.taken_at else ""
+    lines.append(Text(f"{when}{source}", style=p["faint"]))
+    return lines
 
 
 def short_path(path: object) -> str:

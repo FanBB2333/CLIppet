@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from clippet.auth.jwt import claim_time, decode_jwt_claims, encode_unsigned_jwt
+from clippet.auth.quota import QuotaReading, reading_from_cockpit
 
 FORMAT_NATIVE = "codex-auth"
 FORMAT_COCKPIT_EXPORT = "cockpit-export"
@@ -146,6 +147,8 @@ class CodexCredential:
     # The original native auth.json document, kept verbatim so that a native
     # file round-trips without losing fields newer Codex versions add.
     native_document: dict[str, Any] | None = field(default=None, compare=False)
+    # The account's usage limits as an account manager last saw them.
+    quota: QuotaReading | None = field(default=None, compare=False)
 
     # -- presentation -----------------------------------------------------
 
@@ -575,6 +578,7 @@ def credential_from_object(
         source_id=source_id or _str_or_none(meta("id")),
         requires_reauth=_bool(obj.get("requires_reauth") or obj.get("requiresReauth")),
         reauth_reason=_str_or_none(obj.get("reauth_reason") or obj.get("reauthReason")),
+        quota=reading_from_cockpit(obj),
     )
 
 

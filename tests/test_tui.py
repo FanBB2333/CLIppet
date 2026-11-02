@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -33,6 +35,28 @@ def test_accounts_know_which_env_holds_them(world) -> None:
     assert accounts[0].holders == ["alice"] and accounts[2].holders == []
     assert accounts[2].login == "reauth"
     assert reports[0].count == 3 and reports[0].user_added and reports[0].error is None
+
+
+def test_envs_and_accounts_get_the_newest_quota_reading(world) -> None:
+    envs, _ = data.load_envs()
+    accounts, _ = data.load_accounts([str(world["export"])], envs)
+    data.attach_quota(envs, accounts)
+    alice = next(e for e in envs if e.name == "alice")
+    assert alice.quota.source == "cockpit" and round(alice.quota.left(), 2) == 0.1  # the export's last check
+    assert next(e for e in envs if e.name == "scratch").quota is None  # no login, no quota
+
+    # a Codex run in the env leaves a newer reading
+    now = datetime.now(timezone.utc)
+    os.utime(alice.codex_home / "auth.json", (now.timestamp() - 60,) * 2)
+    (alice.codex_home / "sessions").mkdir(parents=True)
+    (alice.codex_home / "sessions" / "rollout-1.jsonl").write_text(json.dumps({
+        "timestamp": now.strftime("%Y-%m-%dT%H:%M:%S.000Z"), "type": "event_msg",
+        "payload": {"type": "token_count", "rate_limits": {
+            "primary": {"used_percent": 30.0, "window_minutes": 300, "resets_at": int(now.timestamp()) + 3600}}},
+    }) + "\n")
+    data.attach_quota(envs, accounts)
+    assert alice.quota.source == "codex" and alice.quota.windows[0].name == "5h"
+    assert accounts[0].quota is alice.quota  # the account shows what its env saw last
 
 
 def test_a_broken_source_is_reported_not_raised(world) -> None:

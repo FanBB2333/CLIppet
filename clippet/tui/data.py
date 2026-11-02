@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from clippet.auth.codex import CodexCredential, load_codex_credentials
+from clippet.auth.quota import QuotaReading, codex_reading_for, newest
 from clippet.config.environments import (
     ENV_TYPE_HOME,
     EnvironmentRegistryError,
@@ -69,6 +70,7 @@ class EnvView:
     agents: dict[str, bool] = field(default_factory=dict)
     share: tuple[str, ...] = ()
     profile: dict = field(default_factory=dict)
+    quota: QuotaReading | None = None  # filled in by attach_quota()
 
     @property
     def is_base(self) -> bool:
@@ -278,6 +280,7 @@ class AccountView:
     source_label: str
     index: int  # 1-based, within its source
     holders: list[str] = field(default_factory=list)
+    quota: QuotaReading | None = None  # filled in by attach_quota()
 
     @property
     def login(self) -> str:
@@ -346,6 +349,35 @@ def load_accounts(sources: list[str], envs: list[EnvView], user_sources: list[st
                 )
             )
     return rows, reports
+
+
+def attach_quota(envs: list[EnvView], accounts: list[AccountView]) -> None:
+    """Give every env and account with a ChatGPT login the newest reading of its usage limits.
+
+    An env's reading comes from its own Codex session logs or from the same
+    account in an account source (Cockpit Tools keeps its last usage check),
+    whichever was taken last.
+    """
+
+    by_identity: dict[str, QuotaReading | None] = {}
+    for account in accounts:
+        key = account.credential.identity_key()
+        if key:
+            by_identity[key] = newest([by_identity.get(key), account.credential.quota])
+    for env in envs:
+        credential = env.credential
+        if credential is None or credential.auth_mode == "apikey" or not env.is_home:
+            env.quota = None
+            continue
+        env.quota = newest([
+            codex_reading_for(env.codex_home, credential.display_plan),
+            by_identity.get(credential.identity_key() or ""),
+            credential.quota,
+        ])
+    by_name = {env.name: env for env in envs}
+    for account in accounts:
+        held = [by_name[name].quota for name in account.holders if name in by_name]
+        account.quota = newest([account.credential.quota, *held])
 
 
 def suggest_env_name(credential: CodexCredential, taken: set[str]) -> str:

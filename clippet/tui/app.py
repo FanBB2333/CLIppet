@@ -27,7 +27,16 @@ from textual.worker import Worker
 
 from clippet.config.environments import get_clippet_root
 from clippet.tui.anim import Tween, breathe, dur, gleam, mix, star
-from clippet.tui.data import BASE, AccountView, EnvView, SourceView, default_sources, load_accounts, load_envs
+from clippet.tui.data import (
+    BASE,
+    AccountView,
+    EnvView,
+    SourceView,
+    attach_quota,
+    default_sources,
+    load_accounts,
+    load_envs,
+)
 from clippet.tui.look import AGENT_COLOR, AGENTS, DEFAULT_THEME, PALETTES, clip, mark, short_path, themes
 from clippet.tui.runs import Run, adapter_for, execute, launch_interactive, prepare_env
 from clippet.tui.views import make_places
@@ -382,6 +391,7 @@ class ClippetApp(App):
         if self.selected_env not in names:
             self.selected_env = next((e.name for e in self.envs if not e.is_base), BASE)
         self.accounts, self.source_reports = load_accounts(self.sources, self.envs, self.prefs.sources)
+        attach_quota(self.envs, self.accounts)
         from clippet.config.project import find_project_config
 
         try:

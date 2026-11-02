@@ -61,6 +61,8 @@ def test_app_opens_on_the_envs_and_moves_between_places(world) -> None:
             assert app.place == "envs"
             assert [e.name for e in app.envs] == ["base", "alice", "bob", "scratch"]
             assert app.selected_env == "alice"
+            block = app.place_named("envs").codex_block(app.env_named("alice")).plain
+            assert "quota" in block and "10% left" in block
             await pilot.press("2")
             assert app.place == "accounts"
             assert len(app.accounts) == 3

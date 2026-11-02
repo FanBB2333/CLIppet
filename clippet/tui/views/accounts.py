@@ -15,7 +15,7 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable
 
 from clippet.tui.data import BASE, AccountView, suggest_env_name
-from clippet.tui.look import LOGIN_WORDS, clip, heading, login_mark, mark, moment, short_path
+from clippet.tui.look import LOGIN_WORDS, clip, heading, login_mark, mark, moment, quota_cell, quota_lines, short_path
 from clippet.tui.widgets import Bar, Confirm, Field, Pane, Place, Prompt, row_key, sync_rows
 
 FORMAT_WORDS = {
@@ -56,6 +56,7 @@ class AccountsPlace(Place):
         table.add_column("#", key="n", width=3)
         table.add_column("account", key="who", width=26)
         table.add_column("plan", key="plan", width=5)
+        table.add_column("quota", key="quota", width=5)
         table.add_column("from", key="from", width=10)
         table.add_column("in env", key="env", width=10)
 
@@ -96,6 +97,7 @@ class AccountsPlace(Place):
                 Text(str(account.index), style=p["muted"]),
                 label,
                 Text(clip(credential.display_plan or "", 5), style=p["muted"]),
+                quota_cell(account.quota, p),
                 Text(clip(account.source_label, 10), style=p["info"]),
                 Text(clip(", ".join(holders), 10) if holders else "—", style=p["ok"] if holders else p["faint"]),
             )))
@@ -166,9 +168,16 @@ class AccountsPlace(Place):
         parts.append(state)
         parts.append(Text())
         parts.append(heading("Details", p))
-        rows = [
+        rows: list[tuple[str, str | Text]] = [
             ("kind", "API key" if credential.auth_mode == "apikey" else "ChatGPT login"),
             ("account", credential.display_account_id or "—"),
+        ]
+        if credential.auth_mode != "apikey":
+            if account.quota is not None:
+                rows += [("quota" if i == 0 else "", line) for i, line in enumerate(quota_lines(account.quota, p))]
+            else:
+                rows.append(("quota", Text("no reading yet", style=p["faint"])))
+        rows += [
             ("label", credential.label or "—"),
             ("token", f"expires {moment(credential.access_expires_at)}" if credential.access_expires_at else "—"),
             ("refreshed", moment(credential.effective_last_refresh) if credential.effective_last_refresh else "—"),
@@ -180,7 +189,11 @@ class AccountsPlace(Place):
         body = Text()
         for label, value in rows:
             body.append(f"  {label:<10} ", style=p["muted"])
-            body.append(f"{value}\n", style=p["ink"])
+            if isinstance(value, Text):
+                body.append_text(value)
+                body.append("\n")
+            else:
+                body.append(f"{value}\n", style=p["ink"])
         parts.append(body)
         parts.append(heading("Envs", p))
         if account.holders:

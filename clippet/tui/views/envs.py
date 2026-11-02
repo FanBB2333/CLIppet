@@ -27,7 +27,8 @@ from clippet.tui.look import (
     login_mark,
     mark,
     moment,
-    relative,
+    quota_cell,
+    quota_lines,
     short_path,
 )
 from clippet.tui.widgets import Bar, Confirm, Field, Form, Pane, Pick, Place, Prompt, row_key, sync_rows
@@ -43,17 +44,6 @@ def agents_cell(env: EnvView, p: dict[str, str]) -> Text:
         else:
             out.append("·", style=p["faint"])
     return out
-
-
-def token_cell(env: EnvView, p: dict[str, str]) -> Text:
-    credential = env.credential
-    if credential is None or credential.auth_mode == "apikey":
-        return Text("—", style=p["faint"])
-    expires = credential.access_expires_at
-    if expires is None:
-        return Text("—", style=p["faint"])
-    word = relative(expires)
-    return Text(word, style=p["warn"] if credential.is_expired() else p["muted"])
 
 
 class EnvsPlace(Place):
@@ -94,7 +84,7 @@ class EnvsPlace(Place):
         table.add_column("env", key="name", width=16)
         table.add_column("codex account", key="who", width=22)
         table.add_column("plan", key="plan", width=5)
-        table.add_column("token", key="token", width=7)
+        table.add_column("quota", key="quota", width=5)
         table.add_column("agents", key="agents", width=7)
 
     def hints(self) -> list[tuple[str, str]]:
@@ -142,7 +132,7 @@ class EnvsPlace(Place):
                 Text(clip(env.name, 16), style=name_style),
                 who_text,
                 Text(clip(env.credential.display_plan or "", 5) if env.credential else "", style=p["muted"]),
-                token_cell(env, p),
+                quota_cell(env.quota, p),
                 agents_cell(env, p),
             )))
         table = self.table
@@ -259,6 +249,10 @@ class EnvsPlace(Place):
         rows = []
         if credential.display_account_id:
             rows.append(("account", Text(credential.display_account_id, style=p["muted"])))
+        if env.quota is not None:
+            rows += [("quota" if i == 0 else "", line) for i, line in enumerate(quota_lines(env.quota, p))]
+        else:
+            rows.append(("quota", Text("no reading yet (a Codex run here leaves one)", style=p["faint"])))
         expires = credential.access_expires_at
         refreshed = credential.effective_last_refresh
         if expires is not None:

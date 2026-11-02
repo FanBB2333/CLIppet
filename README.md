@@ -60,11 +60,13 @@ clippet -e work codex -c model_reasoning_effort=high
 
 | Place | What it shows | Keys |
 |-------|---------------|------|
-| **1 Envs** | `base` (your real HOME) and every env: its Codex account, plan, token lifetime, linked source, agent dirs and recent Codex sessions | `Enter` launch an agent with any arguments · `x` Codex · `r` / `s` resume a session · `Space` mark · `n` / `c` / `d` new, clone, remove · `a` import an account · `y` sync a linked login |
-| **2 Accounts** | every Codex account in Cockpit Tools and in the files you add (exports, sub2api, CLIProxyAPI, `auth.json`), and which env holds it | `Enter` put it into an env · `x` export `auth.json` · `+` / `-` add or forget a file |
+| **1 Envs** | `base` (your real HOME) and every env: its Codex account, plan, how much of its usage limits is left, linked source, agent dirs and recent Codex sessions | `Enter` launch an agent with any arguments · `x` Codex · `r` / `s` resume a session · `Space` mark · `n` / `c` / `d` new, clone, remove · `a` import an account · `y` sync a linked login |
+| **2 Accounts** | every Codex account in Cockpit Tools and in the files you add (exports, sub2api, CLIProxyAPI, `auth.json`), how much of its limits is left, and which env holds it | `Enter` put it into an env · `x` export `auth.json` · `+` / `-` add or forget a file |
 | **3 Runs** | the prompts you sent, streamed: commands, edits, tool calls, the answer, tokens | `c` continue in the agent · `R` run again · `k` stop · `y` copy the answer |
 | **4 Project** | the workspace and its `.clippet.json`: what each agent resolves to | `p` pin an agent to an env · `w` workspace · `e` edit |
 | **5 Checks** | agent CLIs and versions, CLIppet's paths, Cockpit Tools access, the variables isolation drops, env health | `Ctrl+R` check again |
+
+The quota bars show what is left of each limit window (the 5-hour one, the weekly one) and when it starts over. CLIppet does not ask OpenAI for them: it shows the newest of the readings Cockpit Tools keeps from its own usage checks and the ones Codex writes into an env's session logs after every turn.
 
 The box at the bottom (`i`) sends a prompt headless — `codex exec --json` for Codex — to the selected env, or to every env marked with `Space`, in parallel. In the box `Tab` switches the agent and `Ctrl+B` the Codex sandbox. Launching an agent hands it the terminal and CLIppet comes back when it exits; a linked login is pulled first, exactly as with `clippet -e NAME AGENT`.
 

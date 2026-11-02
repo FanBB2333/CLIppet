@@ -1001,8 +1001,8 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
           <button class="tab" role="tab" id="tab-shot-runs" aria-controls="p-shot-runs" aria-selected="false" tabindex="-1">Runs</button>
         </div>
         <div class="shot" id="p-shot-envs" role="tabpanel" aria-labelledby="tab-shot-envs">
-          <img src="../resources/tui-envs.svg" width="1990" height="1042" loading="lazy" alt="The Envs place of clippet tui: a list of envs with their Codex accounts, plans and token lifetimes, and the selected env's details.">
-          <p>Envs: every env with its Codex account, plan and token lifetime.</p>
+          <img src="../resources/tui-envs.svg" width="1990" height="1042" loading="lazy" alt="The Envs place of clippet tui: a list of envs with their Codex accounts, plans and how much of their usage limits is left, and the selected env's details.">
+          <p>Envs: every env with its Codex account, plan and the quota it has left.</p>
         </div>
         <div class="shot" id="p-shot-runs" role="tabpanel" aria-labelledby="tab-shot-runs">
           <img src="../resources/tui-runs.svg" width="1990" height="1042" loading="lazy" alt="The Runs place of clippet tui: one prompt streamed in two envs, each with its steps and answer.">
@@ -1010,8 +1010,8 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
         </div>
       </div>
       <ul class="places">
-        <li class="place card sk"><div class="place-h"><b>1</b><h3>Envs</h3></div><p>Each env's Codex account, plan, token lifetime, linked source and recent sessions.</p><div class="keys"><span><kbd>Enter</kbd> launch</span><span><kbd>r</kbd> resume</span><span><kbd>n</kbd> new</span><span><kbd>a</kbd> import</span></div></li>
-        <li class="place card sk"><div class="place-h"><b>2</b><h3>Accounts</h3></div><p>Every account in Cockpit Tools and in the files you add, and which env holds it.</p><div class="keys"><span><kbd>Enter</kbd> into an env</span><span><kbd>x</kbd> export</span><span><kbd>+</kbd> add a file</span></div></li>
+        <li class="place card sk"><div class="place-h"><b>1</b><h3>Envs</h3></div><p>Each env's Codex account, plan, quota left, linked source and recent sessions.</p><div class="keys"><span><kbd>Enter</kbd> launch</span><span><kbd>r</kbd> resume</span><span><kbd>n</kbd> new</span><span><kbd>a</kbd> import</span></div></li>
+        <li class="place card sk"><div class="place-h"><b>2</b><h3>Accounts</h3></div><p>Every account in Cockpit Tools and in the files you add, the quota it has left, and which env holds it.</p><div class="keys"><span><kbd>Enter</kbd> into an env</span><span><kbd>x</kbd> export</span><span><kbd>+</kbd> add a file</span></div></li>
         <li class="place card sk"><div class="place-h"><b>3</b><h3>Runs</h3></div><p>Prompts you sent, streamed: commands, edits, the answer, tokens.</p><div class="keys"><span><kbd>c</kbd> continue</span><span><kbd>R</kbd> again</span><span><kbd>k</kbd> stop</span></div></li>
         <li class="place card sk"><div class="place-h"><b>4</b><h3>Project</h3></div><p>The workspace's <code>.clippet.json</code> and what each agent resolves to.</p><div class="keys"><span><kbd>p</kbd> pin an env</span><span><kbd>e</kbd> edit</span></div></li>
         <li class="place card sk"><div class="place-h"><b>5</b><h3>Checks</h3></div><p>Agent CLIs and versions, CLIppet's paths, and the variables isolation drops.</p><div class="keys"><span><kbd>Ctrl+R</kbd> check again</span></div></li>
