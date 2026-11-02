@@ -106,7 +106,7 @@ class EnvsPlace(Place):
 
     def help_rows(self) -> list[tuple[str, str]]:
         return [
-            ("Enter", "launch an agent here (asks which, and its arguments)"),
+            ("Enter", "launch an agent here: shows who it runs as, its HOME and folder; Enter again starts it"),
             ("x", "launch Codex here right away"),
             ("r / s", "resume the last Codex session / pick one"),
             ("Space", "mark envs: a prompt then runs in every marked env"),
@@ -339,25 +339,13 @@ class EnvsPlace(Place):
         if agent:
             self.clippet.launch(env, agent, [])
             return
-        fields = [
-            Field("agent", "agent", self.clippet.agent, options=[(a, a) for a in AGENTS]),
-            Field("args", "arguments passed to it (optional)", "", placeholder="e.g. resume --last   or   -m gpt-5.5"),
-        ]
+        from clippet.tui.views.launch import Launch
 
-        def done(values: dict | None) -> None:
-            if not values or not values.get("agent"):
-                return
-            import shlex
+        def done(choice: tuple[str, list[str]] | None) -> None:
+            if choice:
+                self.clippet.launch(env, *choice)
 
-            try:
-                args = shlex.split(values.get("args") or "")
-            except ValueError as exc:
-                self.app.notify(str(exc), title="arguments", severity="error")
-                return
-            self.clippet.launch(env, values["agent"], args)
-
-        self.app.push_screen(Form(f"Launch in {env.name}", fields,
-                                  hint="The agent takes over the terminal; clippet comes back when it exits."), done)
+        self.app.push_screen(Launch(env, self.clippet.agent, self.clippet.workspace, self.pal), done)
 
     def action_resume_last(self) -> None:
         env = self.current()

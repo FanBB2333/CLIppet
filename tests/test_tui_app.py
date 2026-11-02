@@ -184,6 +184,52 @@ def test_launching_hands_the_terminal_to_the_agent(world, monkeypatch) -> None:
     assert calls == [("alice", "codex", [], world["work"]), ("alice", "codex", ["resume", "--last"], world["work"])]
 
 
+def test_enter_shows_who_and_where_before_launching(world, monkeypatch) -> None:
+    from textual.widgets import Input
+
+    from clippet.tui.views.launch import Launch
+
+    calls = []
+    monkeypatch.setattr(ClippetApp, "suspend", lambda self: contextlib.nullcontext())
+    monkeypatch.setattr(tui_app, "launch_interactive",
+                        lambda env, agent, args, cwd: calls.append((env.name, agent, args, cwd)) or (0, []))
+
+    async def scenario() -> None:
+        app = _app(world)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await pilot.press("enter")
+            assert isinstance(app.screen, Launch)
+            facts = app.screen.summary()
+            assert "alice@example.com" in facts and "newest login is pulled first" in facts  # who, and from where
+            assert str(world["work"]) in facts and "clippet -e alice codex" in facts  # the folder and the command
+            await pilot.press("enter")  # as shown: codex, no arguments
+            await pilot.pause()
+            assert not isinstance(app.screen, Launch)
+
+            await pilot.press("enter")
+            app.screen.query_one("#launch-args", Input).value = "resume --last"
+            await pilot.pause()
+            assert "clippet -e alice codex -- resume --last" in app.screen.summary()
+            await pilot.press("enter")
+            await pilot.pause()
+
+            await pilot.press("enter")
+            await pilot.press("tab")  # another agent
+            assert "claude's own login" in app.screen.summary()
+            await pilot.press("enter")
+            await pilot.pause()
+
+            await pilot.press("enter")
+            await pilot.press("escape")  # back, nothing launched
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    work = world["work"]
+    assert calls == [("alice", "codex", [], work), ("alice", "codex", ["resume", "--last"], work),
+                     ("alice", "claude", [], work)]
+
+
 def test_an_account_goes_into_a_new_env(world) -> None:
     async def scenario() -> ClippetApp:
         app = _app(world)

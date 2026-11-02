@@ -60,7 +60,7 @@ clippet -e work codex -c model_reasoning_effort=high
 
 | Place | What it shows | Keys |
 |-------|---------------|------|
-| **1 Envs** | `base` (your real HOME) and every env: its Codex account, plan, how much of its usage limits is left, linked source, agent dirs and recent Codex sessions | `Enter` launch an agent with any arguments · `x` Codex · `r` / `s` resume a session · `Space` mark · `n` / `c` / `d` new, clone, remove · `a` import an account · `y` sync a linked login |
+| **1 Envs** | `base` (your real HOME) and every env: its Codex account, plan, how much of its usage limits is left, linked source, agent dirs and recent Codex sessions | `Enter` launch an agent: who it runs as, its HOME and folder are shown first, add arguments if you like and `Enter` again (`Tab` picks another agent) · `x` Codex · `r` / `s` resume a session · `Space` mark · `n` / `c` / `d` new, clone, remove · `a` import an account · `y` sync a linked login |
 | **2 Accounts** | every Codex account in Cockpit Tools and in the files you add (exports, sub2api, CLIProxyAPI, `auth.json`), how much of its limits is left, and which env holds it | `Enter` put it into an env · `x` export `auth.json` · `+` / `-` add or forget a file |
 | **3 Runs** | the prompts you sent, streamed: commands, edits, tool calls, the answer, tokens | `c` continue in the agent · `R` run again · `k` stop · `y` copy the answer |
 | **4 Project** | the workspace and its `.clippet.json`: what each agent resolves to | `p` pin an agent to an env · `w` workspace · `e` edit |

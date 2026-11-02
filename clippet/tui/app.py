@@ -675,7 +675,10 @@ class ClippetApp(App):
             workdir = self.workspace
         try:
             with self.suspend():
-                print(f"clippet: {agent} @ {env.name} — {short_path(workdir)}", flush=True)
+                who = ""
+                if agent == "codex" and env.credential is not None:
+                    who = f" as {env.credential.display_email or 'API key'}"
+                print(f"clippet: {agent} @ {env.name}{who} — {short_path(workdir)}", flush=True)
                 code, notes = launch_interactive(env, agent, args, workdir)
                 if code not in (0, 130):
                     try:
