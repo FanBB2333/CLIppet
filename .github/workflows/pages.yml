@@ -14,18 +14,19 @@ permissions:
   pages: write
   id-token: write
 
+# One deployment at a time; a deployment that has started is left to finish.
 concurrency:
   group: github-pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Check out the website source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
 
       # The page loads its drawings from ../resources/ so that it also opens
       # straight from a checkout; on Pages they sit next to it.
@@ -36,7 +37,7 @@ jobs:
           cp resources/*.svg _site/resources/
           sed -i 's#\.\./resources/#resources/#g' _site/index.html
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
@@ -49,4 +50,4 @@ jobs:
     steps:
       - name: Publish the website
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
