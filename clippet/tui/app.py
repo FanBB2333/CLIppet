@@ -42,7 +42,19 @@ from clippet.tui.runs import Run, adapter_for, execute, launch_interactive, prep
 from clippet.tui.views import make_places
 from clippet.tui.views.accounts import default_env_for, import_fields
 from clippet.tui.views.project import resolve_workspace
-from clippet.tui.widgets import Bar, Confirm, Divider, Form, Help, Pick, Place, Prompt, keys_line
+from clippet.tui.widgets import (
+    Bar,
+    Confirm,
+    Divider,
+    Filter,
+    Form,
+    Help,
+    ListTable,
+    Pick,
+    Place,
+    Prompt,
+    keys_line,
+)
 
 PLACES = [("envs", "Envs"), ("accounts", "Accounts"), ("runs", "Runs"), ("project", "Project"), ("checks", "Checks")]
 SANDBOXES = ("workspace-write", "read-only")
@@ -65,6 +77,8 @@ Place > Horizontal { height: 1fr; }
 .list-col { width: 74; height: 100%; }
 .detail-col { width: 1fr; height: 100%; padding: 0 0 0 1; }
 .chips { height: 1; padding: 0 1; }
+.filter { height: 1; border: none; padding: 0 1; background: $background; }
+.filter:focus { border: none; background: $surface; }
 
 DataTable { height: 1fr; background: $background; scrollbar-size-vertical: 1; overflow-x: hidden; }
 DataTable > .datatable--header { background: $background; color: $muted; text-style: none; }
@@ -107,6 +121,7 @@ class Prefs:
     sandbox: str = "workspace-write"
     sources: list[str] = field(default_factory=list)
     widths: dict[str, float] = field(default_factory=dict)  # where each Divider was left
+    lists: dict[str, dict] = field(default_factory=dict)  # each ListTable's sort and column widths
 
     @classmethod
     def load(cls, path: Path) -> "Prefs":
@@ -125,6 +140,8 @@ class Prefs:
             prefs.sandbox = data["sandbox"]
         if isinstance(data.get("sources"), list):
             prefs.sources = [str(s) for s in data["sources"] if isinstance(s, str)]
+        if isinstance(data.get("lists"), dict):
+            prefs.lists = {str(key): value for key, value in data["lists"].items() if isinstance(value, dict)}
         if isinstance(data.get("widths"), dict):
             prefs.widths = {
                 str(key): float(value) for key, value in data["widths"].items()
@@ -457,8 +474,12 @@ class ClippetApp(App):
             if self.agent == "codex":
                 keys.append(("Ctrl+B", "sandbox"))
             keys.append(("Esc", "leave the box"))
+        elif isinstance(self.focused, Filter):
+            keys = [("type", "words to keep"), ("Enter / ↓", "back to the list"), ("Esc", "clear")]
         else:
             own = self.current.hints()
+            if self.current.query(Filter):
+                own = [*own, ("/", "filter")]
             keys = [*own, ("i", "prompt"), ("1-5", "places"), ("?", "keys"), ("q", "quit")]
             if any(k == "i" for k, _ in own):
                 keys = [*own, ("1-5", "places"), ("?", "keys"), ("q", "quit")]
@@ -491,9 +512,16 @@ class ClippetApp(App):
                 ("Ctrl+R", "read everything again"),
                 ("T", "paper or ink (light / dark)"),
                 ("drag a │", "make the pane on its left narrower or wider; a double click puts it back"),
+                ("/", "filter a list: keeps the rows with every word typed; Esc clears it"),
+                ("click a header", "sort the list by it; again reverses, a third time goes back"),
+                ("drag between headers", "make a column narrower or wider; a double click puts it back"),
                 ("q", "quit"),
             ]),
         ], header=header))
+
+    def on_list_table_arranged(self, message: ListTable.Arranged) -> None:
+        self.prefs.lists[message.table.list_name] = message.table.state()
+        self.prefs.save(self.prefs_path)
 
     def on_divider_moved(self, message: Divider.Moved) -> None:
         if message.width is None:

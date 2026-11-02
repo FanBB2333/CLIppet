@@ -36,11 +36,14 @@ from clippet.tui.widgets import (
     Confirm,
     Divider,
     Field,
+    Filter,
     Form,
+    ListTable,
     Pane,
     Pick,
     Place,
     Prompt,
+    cursor_to,
     row_key,
     sync_rows,
 )
@@ -85,7 +88,9 @@ class EnvsPlace(Place):
         with Horizontal():
             with Vertical(classes="list-col"):
                 yield Bar(id="env-chips", classes="chips")
-                yield DataTable(id="env-table", cursor_type="row", zebra_stripes=False)
+                yield Filter()
+                yield ListTable("envs", saved=self.clippet.prefs.lists.get("envs"), id="env-table",
+                                cursor_type="row", zebra_stripes=False)
             yield Divider(self.key)
             with Vertical(classes="detail-col"):
                 yield Pane(id="env-detail")
@@ -151,9 +156,7 @@ class EnvsPlace(Place):
         table = self.table
         sync_rows(table, rows)
         if app.selected_env and row_key(table) != app.selected_env:
-            keys = [k for k, _ in rows]
-            if app.selected_env in keys:
-                table.move_cursor(row=keys.index(app.selected_env), animate=False)
+            cursor_to(table, app.selected_env)
         chips = Text()
         registered = len(app.envs) - 1
         chips.append(f"{registered} env{'s' if registered != 1 else ''}", style=f"bold {p['ink']}")

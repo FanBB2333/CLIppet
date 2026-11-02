@@ -123,6 +123,88 @@ def test_dragging_the_line_between_panes_resizes_them(world) -> None:
     assert json.loads((world["tmp"] / "tui.json").read_text())["widths"] == {}
 
 
+def test_cells_sort_by_what_they_say() -> None:
+    from rich.text import Text
+
+    from clippet.tui.widgets import sort_value
+
+    cells = ["49%", "12.4k", "3m 04s", "2h 05m", "45s", "—", "", "bob@example.com", Text("Alice")]
+    values = [sort_value(c) for c in cells]
+    assert values[0] == (0, 49.0, "") and values[1] == (0, 12400.0, "")
+    assert values[2] == (0, 184.0, "") and values[3] == (0, 7500.0, "") and values[4] == (0, 45.0, "")
+    assert values[5] is None and values[6] is None  # empty cells go last either way
+    assert values[7] > values[8] > values[3]  # words after numbers, without case
+
+
+def test_lists_sort_filter_and_resize_their_columns(world) -> None:
+    from clippet.tui.widgets import Filter, ListTable
+
+    def order(table) -> list[str]:
+        return [key.value for key in table.rows]
+
+    def header(table, name: str, *, gap: bool = False) -> tuple[int, int]:
+        """Screen position of a column's label, or of the gap after it."""
+        x = table.region.x
+        for column in table.ordered_columns:
+            width = column.get_render_width(table)
+            if column.key.value == name:
+                return (x + width - 1 if gap else x + 1), table.region.y
+            x += width
+        raise KeyError(name)
+
+    async def arrange() -> None:
+        app = _app(world)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            table = app.place_named("envs").query_one(ListTable)
+            assert order(table) == ["base", "alice", "bob", "scratch"]
+
+            await pilot.click(offset=header(table, "name"))  # sort by the env's name
+            assert order(table) == ["alice", "base", "bob", "scratch"]
+            assert str(table.columns[table.ordered_columns[2].key].label) == "env↑"
+            await pilot.click(offset=header(table, "name"))  # the reverse
+            assert order(table) == ["scratch", "bob", "base", "alice"]
+
+            await pilot.press("slash")  # keep the rows with every word typed
+            assert isinstance(app.focused, Filter)
+            await pilot.press("b")
+            await pilot.pause()
+            assert order(table) == ["bob", "base"]
+            await pilot.press("escape")  # empties it and goes back to the list
+            await pilot.pause()
+            assert app.focused is table and order(table) == ["scratch", "bob", "base", "alice"]
+
+            who = table.columns[table.ordered_columns[3].key]
+            before = who.width
+            x, y = header(table, "who", gap=True)
+            await pilot.mouse_down(offset=(x, y))
+            await pilot.hover(offset=(x + 6, y))
+            await pilot.mouse_up(offset=(x + 6, y))
+            await pilot.click(offset=(x + 6, y))  # what a release sends: it must not sort
+            await pilot.pause()
+            assert who.width == before + 6 and table.sort_key == "name"
+
+    asyncio.run(arrange())
+    saved = json.loads((world["tmp"] / "tui.json").read_text())["lists"]["envs"]
+    assert saved["sort"] == ["name", True] and saved["widths"]["who"] == 28
+
+    async def reopen() -> None:
+        app = _app(world)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            table = app.place_named("envs").query_one(ListTable)
+            assert order(table) == ["scratch", "bob", "base", "alice"]  # remembered
+            who = table.columns[table.ordered_columns[3].key]
+            assert who.width == 28
+            await pilot.click(offset=header(table, "who", gap=True), times=2)  # a double click puts it back
+            assert who.width == 22
+            await pilot.click(offset=header(table, "name"))  # a third click: the place's own order
+            assert order(table) == ["base", "alice", "bob", "scratch"]
+
+    asyncio.run(reopen())
+    assert json.loads((world["tmp"] / "tui.json").read_text())["lists"]["envs"] == {"sort": None, "widths": {}}
+
+
 def test_a_prompt_runs_in_every_marked_env(world, monkeypatch) -> None:
     monkeypatch.setattr(tui_app, "adapter_for", lambda env, agent, sandbox=None: FakeCodex(sandbox=sandbox))
 

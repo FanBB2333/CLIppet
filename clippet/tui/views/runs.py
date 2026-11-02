@@ -16,9 +16,28 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable
 
 from clippet.tui.anim import dur, gleam
-from clippet.tui.look import AGENT_COLOR, RUN_WORDS, clip, heading, mark, run_mark, short_path
+from clippet.tui.look import (
+    AGENT_COLOR,
+    RUN_WORDS,
+    clip,
+    heading,
+    mark,
+    run_mark,
+    short_path,
+)
 from clippet.tui.runs import Run
-from clippet.tui.widgets import Bar, Confirm, Divider, Pane, Place, row_key, sync_rows
+from clippet.tui.widgets import (
+    Bar,
+    Confirm,
+    Divider,
+    Filter,
+    ListTable,
+    Pane,
+    Place,
+    cursor_to,
+    row_key,
+    sync_rows,
+)
 
 STEP_SIGNS = {
     "message": ("✎", "ink"),
@@ -53,7 +72,9 @@ class RunsPlace(Place):
         with Horizontal():
             with Vertical(classes="list-col"):
                 yield Bar(id="run-chips", classes="chips")
-                yield DataTable(id="run-table", cursor_type="row", zebra_stripes=False)
+                yield Filter()
+                yield ListTable("runs", saved=self.clippet.prefs.lists.get("runs"), id="run-table",
+                                cursor_type="row", zebra_stripes=False)
             yield Divider(self.key)
             with Vertical(classes="detail-col"):
                 yield Pane(id="run-detail")
@@ -112,9 +133,7 @@ class RunsPlace(Place):
         self.draw(self.clippet.t)
 
     def focus_run(self, run_id: int) -> None:
-        keys = [str(r.id) for r in reversed(self.clippet.runs)]
-        if str(run_id) in keys:
-            self.table.move_cursor(row=keys.index(str(run_id)), animate=False)
+        cursor_to(self.table, str(run_id))
 
     def draw(self, t: float) -> None:
         p = self.pal
