@@ -170,7 +170,7 @@ class AccountsPlace(Place):
             ("kind", "API key" if credential.auth_mode == "apikey" else "ChatGPT login"),
             ("account", credential.display_account_id or "—"),
             ("label", credential.label or "—"),
-            ("access", f"expires {moment(credential.access_expires_at)}" if credential.access_expires_at else "—"),
+            ("token", f"expires {moment(credential.access_expires_at)}" if credential.access_expires_at else "—"),
             ("refreshed", moment(credential.effective_last_refresh) if credential.effective_last_refresh else "—"),
             ("format", FORMAT_WORDS.get(credential.source_format or "", credential.source_format or "—")),
             ("source", short_path(account.source)),

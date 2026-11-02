@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import platform
 import subprocess
-from datetime import datetime, timezone
 from typing import Any
 
 from rich.console import Group
@@ -17,7 +16,6 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable
 
-from clippet.tui.anim import bar
 from clippet.tui.data import BASE, EnvView, SessionView, codex_sessions, count_sessions
 from clippet.tui.look import (
     AGENT_COLOR,
@@ -264,14 +262,8 @@ class EnvsPlace(Place):
         expires = credential.access_expires_at
         refreshed = credential.effective_last_refresh
         if expires is not None:
-            rows.append(("access", Text(f"expires {moment(expires)}",
-                                        style=p["warn"] if credential.is_expired() else p["muted"])))
-            if refreshed is not None and expires > refreshed:
-                now = datetime.now(timezone.utc)
-                frac = max(0.0, (expires - now).total_seconds() / (expires - refreshed).total_seconds())
-                line = bar(frac, 16, p["ok"] if frac > 0.2 else p["warn"], p["raised"])
-                line.append(f" {frac:.0%} left", style=p["faint"])
-                rows.append(("", line))
+            rows.append(("token", Text(f"expires {moment(expires)}",
+                                       style=p["warn"] if credential.is_expired() else p["muted"])))
         if refreshed is not None:
             rows.append(("refreshed", Text(moment(refreshed), style=p["muted"])))
         if env.source:
