@@ -5,6 +5,7 @@ Usage overview::
     clippet [OPTIONS] [AGENT] [AGENT ARGS...]   # launch an agent (interactive or -p)
     clippet env {list,create,import,status,sync,add,clone,path,remove} ...
     clippet auth {list,export} SOURCE ...
+    clippet tui [WORKSPACE]                     # the terminal UI (also: bare clippet)
 
 Everything after the agent name is forwarded verbatim to the agent's own CLI
 (``clippet -e work codex resume --last``).  CLIppet's ``-p/--prompt`` is the
@@ -164,6 +165,7 @@ class _ClippetArgumentParser:
         _add_run_arguments(subparsers.add_parser("run", help="Run an agent with a config"))
         _add_env_subcommands(subparsers.add_parser("env", help="Manage environments"))
         _add_auth_subcommands(subparsers.add_parser("auth", help="Inspect/convert credentials"))
+        _add_tui_arguments(subparsers.add_parser("tui", help="Open the terminal UI"))
 
         self._run_parser = argparse.ArgumentParser(
             prog="clippet",
@@ -184,6 +186,12 @@ class _ClippetArgumentParser:
         )
         _add_auth_subcommands(self._auth_parser)
 
+        self._tui_parser = argparse.ArgumentParser(
+            prog="clippet tui",
+            description="Open the terminal UI: envs, accounts, runs, project and checks.",
+        )
+        _add_tui_arguments(self._tui_parser)
+
     def parse_args(self, args: list[str] | None = None) -> argparse.Namespace:
         """Parse CLI arguments with support for top-level agent invocations."""
 
@@ -197,6 +205,11 @@ class _ClippetArgumentParser:
         if argv and argv[0] == "auth":
             namespace = self._auth_parser.parse_args(argv[1:])
             namespace.command = "auth"
+            return namespace
+
+        if argv and argv[0] == "tui":
+            namespace = self._tui_parser.parse_args(argv[1:])
+            namespace.command = "tui"
             return namespace
 
         command: str | None = None
@@ -437,6 +450,29 @@ def _add_share_arguments(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Do not link any dotfiles from the real HOME",
     )
+
+
+def _add_tui_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "workspace",
+        nargs="?",
+        default=None,
+        help="Folder prompts run in and .clippet.json is read from (default: the current one)",
+    )
+
+
+def _handle_tui(workspace: str | None) -> None:
+    try:
+        from clippet.tui import run_tui
+    except ImportError as exc:  # pragma: no cover - the package itself always imports
+        _fail(str(exc))
+    target = Path(workspace).expanduser() if workspace else None
+    if target is not None and not target.is_dir():
+        _fail(f"workspace '{workspace}' is not a folder")
+    try:
+        run_tui(target)
+    except ImportError as exc:
+        _fail(str(exc))
 
 
 def _add_auth_subcommands(parser: argparse.ArgumentParser) -> None:
@@ -1711,6 +1747,10 @@ def main() -> None:
         _handle_auth(args)
         return
 
+    if command == "tui":
+        _handle_tui(getattr(args, "workspace", None))
+        return
+
     # If ``command`` is ``"run"`` *or* the user passed top-level flags
     # (``-c`` / ``-e`` / ``--codex-config``), treat it as a run invocation.
     if (
@@ -1735,7 +1775,13 @@ def main() -> None:
             "or pass -c <config> for composite adapter names."
         )
 
-    # Nothing useful provided – show help.
+    # Nothing provided: in a terminal open the TUI (when Textual is there),
+    # otherwise show help.
+    from clippet.tui import textual_available
+
+    if sys.stdin.isatty() and sys.stdout.isatty() and textual_available() and not getattr(args, "prompt", None):
+        _handle_tui(None)
+        return
     parser.print_help()
     sys.exit(1)
 
