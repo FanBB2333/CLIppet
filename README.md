@@ -1,10 +1,12 @@
+<img src="resources/logo.svg" width="72" alt="CLIppet">
+
 # CLIppet
 
 A unified Python adapter framework for orchestrating heterogeneous CLI AI agents.
 
 CLIppet turns scattered, stateless CLI tools — Claude Code, Codex, QoderCLI, Gemini CLI, and others — into strongly-typed, structured-output Python objects with unified execution, isolation, and credential management.
 
-![CLIppet overview](resources/clippet_intro.png)
+![CLIppet: one CLI to orchestrate them all](resources/banner.svg)
 
 CLIppet is an **agent execution layer**, not just an account switcher: every run picks an *identity* (a persistent HOME container, a credential file, or your real HOME) per process, so several agents and several accounts can run side by side — from the terminal or from Python.
 
@@ -37,6 +39,8 @@ clippet -c /path/to/auth.json -p "say hi"
 clippet codex -p "Explain the current codebase"
 ```
 
+Or run plain `clippet` (or `clippet tui`) in a terminal for the [terminal UI](#2-terminal-ui).
+
 Everything after the agent name is **passed through** to the agent's own CLI:
 
 ```bash
@@ -48,9 +52,31 @@ clippet -e work codex -c model_reasoning_effort=high
 
 ---
 
-## 2. Accounts & Environments
+## 2. Terminal UI
 
-### 2.1 HOME containers (conda-style envs)
+`clippet tui` — or plain `clippet` in a terminal — opens a full-screen UI in the same hand-drawn paper palette as these pictures. It needs the `tui` extra: `pip install 'clippet[tui]'`.
+
+![clippet tui: the Envs place](resources/tui-envs.svg)
+
+| Place | What it shows | Keys |
+|-------|---------------|------|
+| **1 Envs** | `base` (your real HOME) and every env: its Codex account, plan, token lifetime, linked source, agent dirs and recent Codex sessions | `Enter` launch an agent with any arguments · `x` Codex · `r` / `s` resume a session · `Space` mark · `n` / `c` / `d` new, clone, remove · `a` import an account · `y` sync a linked login |
+| **2 Accounts** | every Codex account in Cockpit Tools and in the files you add (exports, sub2api, CLIProxyAPI, `auth.json`), and which env holds it | `Enter` put it into an env · `x` export `auth.json` · `+` / `-` add or forget a file |
+| **3 Runs** | the prompts you sent, streamed: commands, edits, tool calls, the answer, tokens | `c` continue in the agent · `R` run again · `k` stop · `y` copy the answer |
+| **4 Project** | the workspace and its `.clippet.json`: what each agent resolves to | `p` pin an agent to an env · `w` workspace · `e` edit |
+| **5 Checks** | agent CLIs and versions, CLIppet's paths, Cockpit Tools access, the variables isolation drops, env health | `Ctrl+R` check again |
+
+The box at the bottom (`i`) sends a prompt headless — `codex exec --json` for Codex — to the selected env, or to every env marked with `Space`, in parallel. In the box `Tab` switches the agent and `Ctrl+B` the Codex sandbox. Launching an agent hands it the terminal and CLIppet comes back when it exits; a linked login is pulled first, exactly as with `clippet -e NAME AGENT`.
+
+![clippet tui: one prompt streamed in two envs](resources/tui-runs.svg)
+
+`T` switches between ink (dark) and paper (light) and `?` lists every key. The theme, the agent and the account files you added are kept in `~/.clippet/tui.json`.
+
+---
+
+## 3. Accounts & Environments
+
+### 3.1 HOME containers (conda-style envs)
 
 A HOME env is a persistent fake `$HOME` at `~/.clippet/envs/<name>/`. CLIppet launches the agent with that directory **as** `$HOME`, so its login, sessions, MCP state and history persist across runs — and stay separate from every other env. Two envs can run at the same time with two different accounts.
 
@@ -85,7 +111,7 @@ clippet env remove scratch --purge   # also delete ~/.clippet/envs/scratch/
 
 Running bare `clippet codex` (or `claude` / `gemini` / `qodercli`) in a terminal opens a small picker listing `base` (your real HOME) and every env, with the Codex account of each.
 
-### 2.2 Importing Codex accounts from other tools
+### 3.2 Importing Codex accounts from other tools
 
 `clippet env import` stores one account from any supported source in an env (creating it, with your Codex config but no other logins, if needed):
 
@@ -95,6 +121,8 @@ clippet env import acct-a cockpit --account 2     # linked to Cockpit (default f
 clippet env import acct-b ./backup.json --account bob@example.com
 clippet -e acct-a codex                           # → Codex logged in as that account
 ```
+
+![One account per env](resources/accounts.svg)
 
 Supported Codex credential sources:
 
@@ -136,7 +164,7 @@ EOF
 clippet -c gw-auth.json --codex-config gw.toml codex
 ```
 
-### 2.3 Passing arguments through
+### 3.3 Passing arguments through
 
 ```
 clippet [CLIPPET OPTIONS] [AGENT] [AGENT ARGS...]
@@ -150,14 +178,14 @@ clippet [CLIPPET OPTIONS] [AGENT] [AGENT ARGS...]
 
 Interactive launches only add the flags you configured — CLIppet does not inject a model, sandbox or permission mode of its own.
 
-### 2.4 How isolation works (and its limits)
+### 3.4 How isolation works (and its limits)
 
 - `$HOME` points at the env (or a temp dir). Variables that would redirect an agent elsewhere are removed from the inherited environment: `CODEX_HOME`, `CODEX_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL` (Codex), `ANTHROPIC_*`, `CLAUDE_CONFIG_DIR` (Claude), `GEMINI_*` / `GOOGLE_*` credentials (Gemini) and `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_STATE_HOME` / `XDG_CACHE_HOME`. Values from your credential file or `env_overrides` are applied afterwards. Opt out in Python with `IsolationConfig(scrub_agent_env=False)`.
 - When CLIppet injects a Codex `auth.json`, it also passes `-c cli_auth_credentials_store="file"` so a `config.toml` that selects the OS keyring cannot hide it.
 - This is HOME/environment isolation, not a security sandbox: the agent can still read files outside its workspace, and credential stores keyed by absolute paths (e.g. the macOS Keychain) are only as separate as the tool makes them.
 - `CLIPPET_HOME` relocates `~/.clippet` (registry and envs).
 
-### 2.5 File-alias envs (legacy)
+### 3.5 File-alias envs (legacy)
 
 A short name for an existing config file. CLIppet copies that one file into a fresh temp HOME on each run — no session persistence, suitable for one-shot scripted calls.
 
@@ -168,7 +196,7 @@ clippet -e mycodex -p "say hi"
 
 ---
 
-## 3. Project-level `.clippet.json`
+## 4. Project-level `.clippet.json`
 
 Run `clippet codex` / `claude` / `gemini` / `qodercli` inside a project without passing `-c` every time. A project can either pin a **named env** (so it always runs under the right account) or reference credential files:
 
@@ -226,7 +254,7 @@ clippet codex                          # Uses .clippet.json
 
 ---
 
-## 4. Why CLIppet?
+## 5. Why CLIppet?
 
 CLI AI agents are powerful but painful to integrate programmatically:
 
@@ -239,23 +267,26 @@ CLIppet solves all of this with a single `adapter.run(request)` call — and the
 
 ---
 
-## 5. Features
+## 6. Features
 
 - **Unified Protocol** — consistent `run()` / `run_async()` interface across all adapters
 - **Structured Output** — final answer, tool calls, step count, token usage and session id (Codex via `codex exec --json`, Claude via JSON output)
 - **Identity layer** — persistent HOME envs, multi-format Codex credentials (Codex, Cockpit Tools, sub2api, CLIProxyAPI), linked imports, refreshed-token write-back
 - **Sandbox Isolation** — per-run credential injection, identity env-var scrubbing, temporary workspaces
 - **Parallel Orchestration** — `ClippetRunner` dispatches multiple agents concurrently via thread pool or asyncio
+- **Terminal UI** — `clippet tui`: envs, accounts, streamed runs (one prompt in many envs), project pins and checks
+- **Live output** — `run_async(request, on_output=...)` streams each line (Codex events) while the agent works
 - **Declarative Config** — YAML/JSON-based adapter registration with credential profiles; per-project `.clippet.json`
 - **Built-in Adapters** — Claude Code, Codex, QoderCLI, and Gemini CLI out of the box; extensible via `BaseSubprocessAdapter`
 
 ---
 
-## 6. Installation
+## 7. Installation
 
 ```bash
 pip install clippet
 pip install 'clippet[cockpit]'   # + reading the Cockpit Tools account store
+pip install 'clippet[tui]'       # + the terminal UI (clippet tui)
 pip install 'clippet[api]'       # + OpenAIAdapter
 ```
 
@@ -269,7 +300,7 @@ pip install 'clippet[dev]'
 
 ---
 
-## 7. Python SDK Quick Start
+## 8. Python SDK Quick Start
 
 ```python
 from clippet import ClippetRunner, AgentRequest
@@ -295,11 +326,24 @@ print(f"Thread:  {result.session_id}")
 
 Adapters only pass the options you set; with no `model` the agent uses the model configured in its HOME.
 
+To watch a run while it works, pass `on_output` to `run_async`; it gets every stdout line as it arrives — for Codex, one `exec --json` event per line. Cancelling the task stops the agent (and still saves a login it refreshed):
+
+```python
+import asyncio, json
+
+def show(line: str) -> None:
+    event = json.loads(line)
+    if event.get("type") == "item.completed":
+        print("·", event["item"]["type"])
+
+result = asyncio.run(CodexAdapter().run_async(request, on_output=show))
+```
+
 ---
 
-## 8. Advanced CLI Usage
+## 9. Advanced CLI Usage
 
-### 8.1 CLIppet composite config (advanced)
+### 9.1 CLIppet composite config (advanced)
 
 When you need multiple adapters with shared credential profiles, use a CLIppet YAML/JSON config file:
 
@@ -314,9 +358,9 @@ Rules:
 - If the composite config has multiple adapters, pass the adapter `name` from the config file.
 - Second-home directory mode still requires an explicit agent (`claude`, `codex`, `gemini`, `qodercli`).
 
-See the [Configuration](#11-configuration-yaml-or-json) section for the full schema.
+See the [Configuration](#12-configuration-yaml-or-json) section for the full schema.
 
-### 8.2 Behavior summary
+### 9.2 Behavior summary
 
 | Flag | Meaning |
 |------|---------|
@@ -326,11 +370,11 @@ See the [Configuration](#11-configuration-yaml-or-json) section for the full sch
 | `-e <name>` | A saved environment — a HOME container (default) or a file alias (legacy) |
 | `-p <prompt>` | Run once non-interactively; omit to launch an interactive session |
 | `[agent]` | Native agent type or composite adapter name. Native configs and single-adapter composite configs can omit it |
-| `[agent args...]` | Passed through to the agent CLI (see 2.3) |
+| `[agent args...]` | Passed through to the agent CLI (see 3.3) |
 
 ---
 
-## 9. Parallel Execution
+## 10. Parallel Execution
 
 Run multiple agents — or the same agent under several accounts — simultaneously:
 
@@ -352,7 +396,7 @@ for name, result in results.items():
 
 ---
 
-## 10. Credential Isolation
+## 11. Credential Isolation
 
 Run agents with different API keys without conflicts:
 
@@ -385,7 +429,7 @@ results = runner.execute_parallel({
 
 ---
 
-## 11. Configuration (YAML or JSON)
+## 12. Configuration (YAML or JSON)
 
 Define adapters and credential profiles declaratively:
 
@@ -448,49 +492,9 @@ result = runner.execute("claude-personal", request)
 
 ---
 
-## 12. How It Works
+## 13. How It Works
 
-```
-  ┌─────────────────────────────────────────────────────────────────┐
-  │                          CLIppet                                │
-  │                                                                 │
-  │   CLI: clippet -e work codex resume --last                      │
-  │   API: runner.execute("codex", AgentRequest(...))               │
-  │                          │                                      │
-  │                          ▼                                      │
-  │          ┌───────────────────────────────┐                      │
-  │          │   Identity / Environment      │                      │
-  │          │  HOME envs · credential files │                      │
-  │          │  Codex/Cockpit/sub2api/CPA    │                      │
-  │          └───────────────┬───────────────┘                      │
-  │                          ▼                                      │
-  │     ┌────────────────────────────────────────┐                  │
-  │     │              Adapter layer             │                  │
-  │     │  ClaudeAdapter · CodexAdapter          │                  │
-  │     │  QoderCLIAdapter · GeminiAdapter       │                  │
-  │     │  build_command() · parse_output()      │                  │
-  │     └────────────────────┬───────────────────┘                  │
-  │                          ▼                                      │
-  │          ┌───────────────────────────────┐                      │
-  │          │      Sandbox / Isolation      │                      │
-  │          │  • HOME = env or temp dir     │                      │
-  │          │  • inject credentials (0600)  │                      │
-  │          │  • scrub identity env vars    │                      │
-  │          └───────────────┬───────────────┘                      │
-  └──────────────────────────┼──────────────────────────────────────┘
-                             ▼
-           ┌─────────────────────────────────┐
-           │      CLI Agent subprocess       │
-           │  claude / codex / qodercli      │
-           │  gemini                         │
-           └─────────────────┬───────────────┘
-                             ▼
-           ┌─────────────────────────────────┐
-           │    Output parser → AgentResult  │
-           │  output_text · tool_calls ·     │
-           │  usage · session_id · time      │
-           └─────────────────────────────────┘
-```
+![How a run goes](resources/how-it-works.svg)
 
 - **Identity layer** decides which HOME and credentials a run uses: a HOME env, a credential file in any supported format (converted to the agent's native layout), or the real HOME.
 - **Adapter layer** translates a generic `AgentRequest` into tool-specific CLI flags and parses the raw output back into a structured `AgentResult`.
@@ -499,7 +503,7 @@ result = runner.execute("claude-personal", request)
 
 ---
 
-## 13. Architecture
+## 14. Architecture
 
 ```
 clippet/
@@ -512,6 +516,12 @@ clippet/
 │   ├── codex.py         # Codex credentials in every format → native auth.json
 │   ├── cockpit.py       # Cockpit Tools account store (read-only)
 │   └── jwt.py           # Local JWT claim decoding
+├── tui/                 # clippet tui (Textual)
+│   ├── app.py           # masthead, ribbon, places, prompt box, one animation clock
+│   ├── views/           # Envs, Accounts, Runs, Project, Checks
+│   ├── data.py          # what the places show, read from CLIppet's own state
+│   ├── runs.py          # streamed headless runs, interactive launches
+│   └── look.py          # paper palettes and the hand-drawn mark in braille
 ├── adapters/
 │   ├── base.py          # BaseSubprocessAdapter
 │   ├── claude.py        # Claude Code CLI adapter
@@ -527,7 +537,7 @@ clippet/
     └── registry.py      # YAML/JSON config & adapter registration
 ```
 
-### 13.1 Core Data Models
+### 14.1 Core Data Models
 
 | Model | Purpose |
 |-------|---------|
@@ -537,7 +547,7 @@ clippet/
 | `IsolationConfig` | HOME dir, credential files/contents, sync-back, env overrides, whitelist/blacklist, env scrubbing |
 | `CodexCredential` | One Codex identity from any source format; renders native `auth.json` |
 
-### 13.2 Built-in Adapters
+### 14.2 Built-in Adapters
 
 | Adapter | CLI Tool | Key Flags |
 |---------|----------|-----------|
@@ -546,7 +556,7 @@ clippet/
 | `QoderCLIAdapter` | `qodercli` | `-p`, `--model`, `--max-turns`, `-w` (workspace) |
 | `GeminiAdapter` | `gemini` | `--model`, config via `.env` file |
 
-### 13.3 Extending with Custom Adapters
+### 14.3 Extending with Custom Adapters
 
 Subclass `BaseSubprocessAdapter` and implement two methods:
 
@@ -572,17 +582,19 @@ class MyAdapter(BaseSubprocessAdapter):
 
 ---
 
-## 14. Development
+## 15. Development
 
 ```bash
 git clone https://github.com/FanBB2333/CLIppet.git
 cd CLIppet
-pip install -e ".[dev,cockpit]"
+pip install -e ".[dev,cockpit,tui]"
 pytest
 ```
 
+The drawings in `resources/` are generated: `python scripts/draw_art.py` traces every shape with a seeded wobble (after papertown's `hand.ts`) and letters in LXGW WenKai GB Lite (SIL OFL 1.1) as outlines, so the same seeds always give the same pictures. It needs `fonttools` and the font file (`--font PATH`; TeX Live ships one).
+
 ---
 
-## 15. License
+## 16. License
 
 MIT
