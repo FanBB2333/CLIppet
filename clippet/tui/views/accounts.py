@@ -16,7 +16,7 @@ from textual.widgets import DataTable
 
 from clippet.tui.data import BASE, AccountView, suggest_env_name
 from clippet.tui.look import LOGIN_WORDS, clip, heading, login_mark, mark, moment, quota_cell, quota_lines, short_path
-from clippet.tui.widgets import Bar, Confirm, Field, Pane, Place, Prompt, row_key, sync_rows
+from clippet.tui.widgets import Bar, Confirm, Divider, Field, Pane, Place, Prompt, row_key, sync_rows
 
 FORMAT_WORDS = {
     "codex-auth": "Codex auth.json",
@@ -47,6 +47,7 @@ class AccountsPlace(Place):
             with Vertical(classes="list-col"):
                 yield Bar(id="acct-chips", classes="chips")
                 yield DataTable(id="acct-table", cursor_type="row", zebra_stripes=False)
+            yield Divider(self.key)
             with Vertical(classes="detail-col"):
                 yield Pane(id="acct-detail")
 

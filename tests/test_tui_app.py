@@ -78,6 +78,51 @@ def test_app_opens_on_the_envs_and_moves_between_places(world) -> None:
     assert json.loads((world["tmp"] / "tui.json").read_text())["theme"] == "clippet-paper"
 
 
+def test_dragging_the_line_between_panes_resizes_them(world) -> None:
+    from clippet.tui.widgets import Divider
+
+    def parts(app):
+        place = app.place_named("envs")
+        return place.query_one(".list-col"), place.query_one(Divider)
+
+    async def drag(pilot, line, by: int) -> None:
+        x, y = line.region.x, line.region.y + 5  # screen positions: the line moves while it is dragged
+        await pilot.mouse_down(offset=(x, y))
+        await pilot.hover(offset=(x + by, y))
+        await pilot.mouse_up(offset=(x + by, y))
+        await pilot.pause()
+
+    async def resize() -> int:
+        app = _app(world)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            column, line = parts(app)
+            before = column.outer_size.width
+            await drag(pilot, line, -20)
+            assert abs(column.outer_size.width - (before - 20)) <= 1
+            await drag(pilot, line, -line.region.x)  # never narrower than its least
+            assert abs(column.outer_size.width - line.least) <= 1
+            await drag(pilot, line, before - 20 - column.outer_size.width)
+            assert abs(column.outer_size.width - (before - 20)) <= 1
+            return before
+
+    before = asyncio.run(resize())
+    assert set(json.loads((world["tmp"] / "tui.json").read_text())["widths"]) == {"envs"}
+
+    async def reopen() -> None:
+        app = _app(world)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            column, line = parts(app)
+            assert abs(column.outer_size.width - (before - 20)) <= 1  # remembered
+            await pilot.click(line, offset=(0, 5), times=2)  # a double click puts it back
+            await pilot.pause()
+            assert column.outer_size.width == before
+
+    asyncio.run(reopen())
+    assert json.loads((world["tmp"] / "tui.json").read_text())["widths"] == {}
+
+
 def test_a_prompt_runs_in_every_marked_env(world, monkeypatch) -> None:
     monkeypatch.setattr(tui_app, "adapter_for", lambda env, agent, sandbox=None: FakeCodex(sandbox=sandbox))
 

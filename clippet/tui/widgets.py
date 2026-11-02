@@ -1,6 +1,7 @@
 """Pieces the places share: the base of a place, a table that updates in
-place instead of being rebuilt, a scrolling page, and the dialogs (a line of
-text, a small form, a yes/no, a list to pick from, the keys)."""
+place instead of being rebuilt, a scrolling page, the line between two panes
+that can be dragged, and the dialogs (a line of text, a small form, a yes/no,
+a list to pick from, the keys)."""
 
 from __future__ import annotations
 
@@ -8,10 +9,13 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from rich.text import Text
+from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.message import Message
 from textual.screen import ModalScreen
+from textual.widget import Widget
 from textual.widgets import DataTable, Input, Label, OptionList, Select, Static, Switch
 from textual.widgets.option_list import Option
 
@@ -58,6 +62,110 @@ class Bar(Static):
     """A piece of the interface itself (chips, hints): clicked, never selected as text."""
 
     ALLOW_SELECT = False
+
+
+class Divider(Widget):
+    """The line between two panes in a row.  Dragging it left or right gives
+    the pane before it fewer or more columns; a double click puts it back.
+
+    *key* names the width in the TUI's prefs.  With *share* the width is kept
+    as a share of the row, so that it follows the terminal's size; otherwise
+    it is a number of columns.  The pane keeps at least *least* columns and
+    leaves at least *keep* for what comes after the line.
+    """
+
+    ALLOW_SELECT = False
+
+    class Moved(Message):
+        """A drag ended (*width* is what to remember) or a double click reset the pane (*width* is None)."""
+
+        def __init__(self, divider: "Divider", width: float | None) -> None:
+            super().__init__()
+            self.divider = divider
+            self.width = width
+
+        @property
+        def control(self) -> "Divider":
+            return self.divider
+
+    def __init__(self, key: str, *, share: bool = True, least: int = 24, keep: int = 30,
+                 id: str | None = None) -> None:
+        super().__init__(id=id, classes="divider")
+        self.key = key
+        self.share = share
+        self.least = least
+        self.keep = keep
+        self._grab: tuple[int, int] | None = None
+        self._width: float | None = None
+
+    @property
+    def pane(self) -> Widget | None:
+        """The widget before this line in its row."""
+
+        if self.parent is None:
+            return None
+        row = list(self.parent.children)
+        at = row.index(self)
+        return row[at - 1] if at > 0 else None
+
+    def render(self) -> str:
+        return ""  # the line is the widget's border
+
+    def on_mouse_down(self, event: events.MouseDown) -> None:
+        pane = self.pane
+        if pane is None or event.button != 1:
+            return
+        self._grab, self._width = (event.screen_x, pane.outer_size.width), None
+        self.capture_mouse()
+        self.add_class("-dragging")
+        event.stop()
+
+    def on_mouse_move(self, event: events.MouseMove) -> None:
+        if self._grab is None:
+            return
+        start, width = self._grab
+        self.move_to(width + event.screen_x - start)
+        event.stop()
+
+    def on_mouse_up(self, event: events.MouseUp) -> None:
+        if self._grab is None:
+            return
+        self._grab = None
+        self.release_mouse()
+        self.remove_class("-dragging")
+        if self._width is not None:
+            self.post_message(self.Moved(self, self._width))
+        event.stop()
+
+    def on_click(self, event: events.Click) -> None:
+        event.stop()
+        pane = self.pane
+        if event.chain >= 2 and pane is not None:
+            pane.styles.width = None  # back to the stylesheet's width
+            self.post_message(self.Moved(self, None))
+
+    def move_to(self, columns: int) -> None:
+        """Give the pane before the line *columns* columns, within the limits."""
+
+        pane, row = self.pane, self.parent
+        total = row.size.width if isinstance(row, Widget) else 0
+        if pane is None or total <= 0:
+            return
+        columns = max(self.least, min(columns, total - self.outer_size.width - self.keep))
+        if self.share:
+            self._width = round(100 * columns / total, 2)
+            pane.styles.width = f"{self._width}%"
+        else:
+            self._width = columns
+            pane.styles.width = columns
+
+    def restore(self, width: float | None) -> None:
+        """Apply a remembered width: a share of the row in percent, or columns."""
+
+        pane = self.pane
+        if pane is None or width is None or width <= 0:
+            return
+        pane.styles.width = f"{width}%" if self.share else int(width)
 
 
 class Pane(VerticalScroll):

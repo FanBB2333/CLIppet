@@ -18,7 +18,7 @@ from textual.widgets import DataTable
 from clippet.tui.anim import dur, gleam
 from clippet.tui.look import AGENT_COLOR, RUN_WORDS, clip, heading, mark, run_mark, short_path
 from clippet.tui.runs import Run
-from clippet.tui.widgets import Bar, Confirm, Pane, Place, row_key, sync_rows
+from clippet.tui.widgets import Bar, Confirm, Divider, Pane, Place, row_key, sync_rows
 
 STEP_SIGNS = {
     "message": ("✎", "ink"),
@@ -54,6 +54,7 @@ class RunsPlace(Place):
             with Vertical(classes="list-col"):
                 yield Bar(id="run-chips", classes="chips")
                 yield DataTable(id="run-table", cursor_type="row", zebra_stripes=False)
+            yield Divider(self.key)
             with Vertical(classes="detail-col"):
                 yield Pane(id="run-detail")
 

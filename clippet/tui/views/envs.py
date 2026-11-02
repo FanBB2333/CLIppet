@@ -31,7 +31,19 @@ from clippet.tui.look import (
     quota_lines,
     short_path,
 )
-from clippet.tui.widgets import Bar, Confirm, Field, Form, Pane, Pick, Place, Prompt, row_key, sync_rows
+from clippet.tui.widgets import (
+    Bar,
+    Confirm,
+    Divider,
+    Field,
+    Form,
+    Pane,
+    Pick,
+    Place,
+    Prompt,
+    row_key,
+    sync_rows,
+)
 
 KIND_WORDS = {BASE: "your real HOME", "home": "HOME env", "file": "file alias"}
 
@@ -74,6 +86,7 @@ class EnvsPlace(Place):
             with Vertical(classes="list-col"):
                 yield Bar(id="env-chips", classes="chips")
                 yield DataTable(id="env-table", cursor_type="row", zebra_stripes=False)
+            yield Divider(self.key)
             with Vertical(classes="detail-col"):
                 yield Pane(id="env-detail")
 

@@ -66,6 +66,8 @@ clippet -e work codex -c model_reasoning_effort=high
 | **4 Project** | the workspace and its `.clippet.json`: what each agent resolves to | `p` pin an agent to an env · `w` workspace · `e` edit |
 | **5 Checks** | agent CLIs and versions, CLIppet's paths, Cockpit Tools access, the variables isolation drops, env health | `Ctrl+R` check again |
 
+Drag the line between two panes to give the one on its left more or less room; a double click puts it back. The widths are kept in `~/.clippet/tui.json` with the theme.
+
 The quota bars show what is left of each limit window (the 5-hour one, the weekly one) and when it starts over. CLIppet does not ask OpenAI for them: it shows the newest of the readings Cockpit Tools keeps from its own usage checks and the ones Codex writes into an env's session logs after every turn.
 
 The box at the bottom (`i`) sends a prompt headless — `codex exec --json` for Codex — to the selected env, or to every env marked with `Space`, in parallel. In the box `Tab` switches the agent and `Ctrl+B` the Codex sandbox. Launching an agent hands it the terminal and CLIppet comes back when it exits; a linked login is pulled first, exactly as with `clippet -e NAME AGENT`.

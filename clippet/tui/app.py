@@ -42,7 +42,7 @@ from clippet.tui.runs import Run, adapter_for, execute, launch_interactive, prep
 from clippet.tui.views import make_places
 from clippet.tui.views.accounts import default_env_for, import_fields
 from clippet.tui.views.project import resolve_workspace
-from clippet.tui.widgets import Bar, Confirm, Form, Help, Pick, Place, Prompt, keys_line
+from clippet.tui.widgets import Bar, Confirm, Divider, Form, Help, Pick, Place, Prompt, keys_line
 
 PLACES = [("envs", "Envs"), ("accounts", "Accounts"), ("runs", "Runs"), ("project", "Project"), ("checks", "Checks")]
 SANDBOXES = ("workspace-write", "read-only")
@@ -55,12 +55,15 @@ Screen { background: $background; color: $foreground; }
 #ribbon { height: 1; margin-bottom: 1; }
 #body { height: 1fr; }
 #nav { width: 16; height: 100%; padding: 1 0; background: $surface; }
+Divider { width: 1; height: 100%; border-left: vkey $panel; }
+Divider:hover, Divider.-dragging { border-left: vkey $primary; }
+#nav-line { border-left: vkey $surface; }
 #places { width: 1fr; height: 100%; }
 #places > Place { height: 100%; }
 Place > Horizontal { height: 1fr; }
 
 .list-col { width: 74; height: 100%; }
-.detail-col { width: 1fr; height: 100%; border-left: vkey $panel; padding: 0 0 0 1; }
+.detail-col { width: 1fr; height: 100%; padding: 0 0 0 1; }
 .chips { height: 1; padding: 0 1; }
 
 DataTable { height: 1fr; background: $background; scrollbar-size-vertical: 1; overflow-x: hidden; }
@@ -103,6 +106,7 @@ class Prefs:
     agent: str = "codex"
     sandbox: str = "workspace-write"
     sources: list[str] = field(default_factory=list)
+    widths: dict[str, float] = field(default_factory=dict)  # where each Divider was left
 
     @classmethod
     def load(cls, path: Path) -> "Prefs":
@@ -121,6 +125,11 @@ class Prefs:
             prefs.sandbox = data["sandbox"]
         if isinstance(data.get("sources"), list):
             prefs.sources = [str(s) for s in data["sources"] if isinstance(s, str)]
+        if isinstance(data.get("widths"), dict):
+            prefs.widths = {
+                str(key): float(value) for key, value in data["widths"].items()
+                if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0
+            }
         return prefs
 
     def save(self, path: Path) -> None:
@@ -349,12 +358,15 @@ class ClippetApp(App):
         yield self.ribbon
         with Horizontal(id="body"):
             yield self.nav
+            yield Divider("nav", share=False, least=12, keep=60, id="nav-line")
             with ContentSwitcher(id="places", initial="envs"):
                 yield from self.places
         yield self.composer
         yield self.hints_bar
 
     def on_mount(self) -> None:
+        for divider in self.query(Divider):
+            divider.restore(self.prefs.widths.get(divider.key))
         self.reload()
         self.set_interval(1 / 12, self.frame)
         self.current.focus_first()
@@ -478,9 +490,17 @@ class ClippetApp(App):
                 ("w", "change the workspace runs start in"),
                 ("Ctrl+R", "read everything again"),
                 ("T", "paper or ink (light / dark)"),
+                ("drag a │", "make the pane on its left narrower or wider; a double click puts it back"),
                 ("q", "quit"),
             ]),
         ], header=header))
+
+    def on_divider_moved(self, message: Divider.Moved) -> None:
+        if message.width is None:
+            self.prefs.widths.pop(message.divider.key, None)
+        else:
+            self.prefs.widths[message.divider.key] = message.width
+        self.prefs.save(self.prefs_path)
 
     def action_theme(self) -> None:
         self.theme = "clippet-paper" if self.theme == "clippet" else "clippet"
