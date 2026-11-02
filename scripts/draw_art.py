@@ -751,7 +751,7 @@ def draw_accounts(letters: Lettering) -> str:
     d.arrow([(300, 126), (470, 64), (700, 92), (752, 236)], color=BRAND, width=1.8, head=11, dash="1.5 7")
     d.text("linked: the newest login is pulled before each launch", 575, 150, 17, color=BRAND, anchor="middle", hand=0.5)
 
-    d.text("Logins are not copied between envs: OAuth refresh tokens rotate, so each env keeps its own.",
+    d.text("Each env keeps its own login: OAuth refresh tokens rotate, so copies would break each other.",
            W / 2, 566, 18, color=MUTED, anchor="middle", hand=0.4)
     return d.svg("One account per env", "Codex accounts from Cockpit Tools, sub2api, CLIProxyAPI or auth.json are "
                  "imported into a HOME env; the env then launches Codex as that account.")
@@ -955,7 +955,7 @@ def draw_architecture(letters: Lettering) -> str:
            "protocols.py: ClippetAdapter", W / 2, 1260, 16.5, color=MUTED, anchor="middle", hand=0.4)
     return d.svg("CLIppet architecture", "The CLI, the TUI and the Python SDK pick an identity through config/ "
                  "(Codex accounts come from auth/); an adapter turns the request into the agent's command; "
-                 "isolation.py runs the agent CLI in a sandbox HOME; parsers turn its output into an AgentResult.")
+                 "isolation.py prepares the sandbox HOME the agent runs in; parsers turn its output into an AgentResult.")
 
 
 # --- a frame for a terminal screenshot ----------------------------------------

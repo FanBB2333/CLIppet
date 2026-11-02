@@ -637,7 +637,7 @@ footer ul a:hover{color:var(--text)}
             <p class="pick-l">Choose an env</p>
             <div class="pchips">
               <div class="pchip sk"><i class="ag"></i><span class="pc-id">base</span><span class="pc-a">your own HOME</span></div>
-              <div class="pchip sk" data-id="work"><i class="ag codex"></i><span class="pc-id">work</span><span class="pc-a">alice@example.com</span><span class="pc-ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
+              <div class="pchip sk" data-id="work"><i class="ag codex"></i><span class="pc-id">work</span><span class="pc-a">alice, linked</span><span class="pc-ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
               <div class="pchip sk"><i class="ag codex"></i><span class="pc-id">personal</span><span class="pc-a">bob@example.com</span></div>
               <div class="pchip sk"><i class="ag claude"></i><span class="pc-id">research</span><span class="pc-a">a Claude login</span></div>
               <div class="pchip sk"><i class="ag codex"></i><span class="pc-id">client</span><span class="pc-a">Cockpit #3, linked</span></div>
@@ -722,7 +722,7 @@ footer ul a:hover{color:var(--text)}
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><path d="M2.5 7.5h15M6 11l2 1.5L6 14M10 14h4" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Your command
             </div>
-            <div class="node-s"><code class="inline-code">clippet -e work codex resume --last</code>: everything after <code class="inline-code">codex</code> is Codex's own</div>
+            <div class="node-s"><code class="inline-code">clippet -e work codex resume --last</code>: <code class="inline-code">resume --last</code> goes to Codex as is</div>
           </div>
           <div class="link" aria-hidden="true"><svg viewBox="0 0 10 28"><path d="M5 0C6.4 9 3.8 18 5 28"/></svg></div>
           <div class="node sk flat layer">
@@ -778,7 +778,8 @@ footer ul a:hover{color:var(--text)}
 <span class="t-p">$ </span>clippet -e work codex resume --last      <span class="t-c"># the rest goes to Codex as is</span>
 
 <span class="t-c"># two envs, two accounts, at the same time</span>
-<span class="t-p">$ </span>clippet -e personal codex <span class="t-o">&amp;</span>  clippet -e work codex <span class="t-o">&amp;</span></code></pre>
+<span class="t-p">$ </span>clippet -e personal codex                <span class="t-c"># in one terminal</span>
+<span class="t-p">$ </span>clippet -e work codex                    <span class="t-c"># and in another</span></code></pre>
         </div>
 
         <div class="code-panel" id="p-acc" role="tabpanel" aria-labelledby="tab-acc">
@@ -839,7 +840,7 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
         <span class="way-n">01</span>
         <div class="ico sk flat"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><path d="M6 8l2.5 2L6 12M10.5 12.5h3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <h3>Interactive</h3>
-        <p>Hands your terminal to the agent inside the env's HOME. Everything after the agent name goes to the agent unchanged, so its own subcommands and flags keep working.</p>
+        <p>Hands your terminal to the agent inside the env's HOME. Everything after the agent name, apart from CLIppet's own <code>-p</code>, goes to the agent unchanged, so its own subcommands and flags keep working.</p>
         <div class="entry"><div class="entry-l">Entry point</div>
 <pre><code>clippet -e work codex resume --last</code></pre></div>
       </article>
@@ -855,7 +856,7 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
         <span class="way-n">03</span>
         <div class="ico sk flat"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 6 3 10l4 4M13 6l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/><path d="m11 4-2 12" stroke-linecap="round"/></svg></div>
         <h3>From Python</h3>
-        <p>One <code>run()</code> for every CLI, structured results back: the answer, tool calls, usage and session id. <code>ClippetRunner</code> runs several side by side, and <code>run_async</code> streams each line as it comes.</p>
+        <p>One <code>run()</code> for every CLI and a structured result back: the answer from all four, plus tool calls, usage and session id from Codex and Claude Code. <code>ClippetRunner</code> runs several side by side, and <code>run_async</code> streams each line as it comes.</p>
         <div class="entry"><div class="entry-l">Entry point</div>
 <pre><code>runner.<span class="t-f">execute_parallel</span>(
     {<span class="t-s">"work"</span>: req, <span class="t-s">"personal"</span>: req})</code></pre></div>
@@ -876,7 +877,7 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
         <span class="tag">linked</span>
         <h3>Cockpit Tools store</h3>
         <code class="how">cockpit</code>
-        <p>The live, encrypted account store, read only. An env linked to one of its accounts pulls the newest login before every launch.</p>
+        <p>The live, encrypted account store, read only. An env linked to one of its accounts pulls the newest login before every launch from the CLI or the TUI.</p>
       </article>
       <article class="card fmt sk">
         <h3>Cockpit Tools export</h3>
@@ -908,7 +909,7 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
       <img src="../resources/accounts.svg" width="1200" height="600" loading="lazy" alt="Codex accounts from Cockpit Tools, a Cockpit export, sub2api, CLIProxyAPI or auth.json are imported into the env acct-a with clippet env import; the env then launches Codex logged in as that account.">
     </figure>
     <ul class="notes">
-      <li>Logins are not copied between envs. OAuth refresh tokens rotate, so the first copy that refreshes would break the others.</li>
+      <li>Logins are not copied between envs unless you pass <code>--with-auth</code>. OAuth refresh tokens rotate, so the first copy that refreshes would break the others.</li>
       <li>A linked env leaves refreshing to the account manager; <code>clippet env sync</code> pulls the newest login on demand.</li>
       <li>When Codex refreshes a login during a run, CLIppet writes it back to its <code>auth.json</code>, or keeps it under <code>~/.clippet/refreshed/</code>.</li>
       <li>Accounts that need a new login, ChatGPT web-session tokens and non-OpenAI tokens are flagged or skipped.</li>
@@ -927,7 +928,8 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
         <span class="num">01</span>
         <h3>Keep work and personal agents apart</h3>
         <p>Each env keeps its own login, sessions, MCP state and history. Two envs can run at once, as two different accounts.</p>
-        <div class="snip"><pre><code><span class="t-p">$ </span>clippet -e personal codex <span class="t-o">&amp;</span>  clippet -e work codex <span class="t-o">&amp;</span></code></pre></div>
+        <div class="snip"><pre><code><span class="t-p">$ </span>clippet -e personal codex   <span class="t-c"># one terminal</span>
+<span class="t-p">$ </span>clippet -e work codex       <span class="t-c"># another, at the same time</span></code></pre></div>
         <div class="cmds"><span class="cmd">env create</span><span class="cmd">-e work</span></div>
       </article>
       <article class="card uc s2 sk">
@@ -951,7 +953,7 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
       <article class="card uc s2 wide-t sk">
         <span class="num">05</span>
         <h3>Keep every agent flag</h3>
-        <p>Subcommands and options after the agent name reach the agent unchanged.</p>
+        <p>Subcommands and options after the agent name reach the agent unchanged. Only a <code>-p</code> right after the name is CLIppet's, and <code>--</code> passes even that on.</p>
         <div class="cmds"><span class="cmd">resume --last</span><span class="cmd">login</span><span class="cmd">-c key=value</span></div>
       </article>
       <article class="card uc s3 sk">
@@ -980,7 +982,7 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
       </article>
     </div>
     <div class="allcmds">
-      <span>Run <code>clippet --help</code> or <code>clippet env --help</code> for every command.</span>
+      <span>Run <code>clippet --help</code> for the launch options, and <code>clippet env --help</code> or <code>clippet auth --help</code> for the rest.</span>
       <a class="arrow-link" href="https://github.com/FanBB2333/CLIppet#3-accounts--environments">Accounts and environments <span aria-hidden="true">→</span></a>
     </div>
   </div>
@@ -1025,7 +1027,7 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
     <h2>A run goes down, <span class="dim">its result comes back up.</span></h2>
     <p class="sec-lead">Five parts, one question each: where the run starts, who it runs as, where that login comes from, how CLIppet talks to the agent, and where the agent runs.</p>
     <figure class="art">
-      <img src="../resources/architecture.svg" width="1200" height="1290" loading="lazy" alt="CLIppet's architecture: the CLI, the TUI and the Python SDK pick an identity through config/ (Codex accounts come from auth/); an adapter turns the request into the agent's command; isolation.py runs the agent CLI in a sandbox HOME; parsers turn its output into an AgentResult.">
+      <img src="../resources/architecture.svg" width="1200" height="1290" loading="lazy" alt="CLIppet's architecture: the CLI, the TUI and the Python SDK pick an identity through config/ (Codex accounts come from auth/); an adapter turns the request into the agent's command; isolation.py prepares the sandbox HOME the agent runs in; parsers turn its output into an AgentResult.">
     </figure>
     <div class="layers">
       <div class="ly start sk flat"><h3>Entry points</h3><code class="mod">cli.py · tui/ · orchestrator.py</code><p>The CLI, the TUI and the Python SDK drive the same layers.</p></div>
@@ -1108,8 +1110,8 @@ clippet</code></pre>
           <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>The agent still runs as you, so it can read files outside its workspace and outside its env.</span></li>
           <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>Credential stores keyed by absolute paths, such as the macOS Keychain, are only as separate as each agent makes them.</span></li>
           <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>A login copied into two envs breaks one of them when its refresh token rotates. Log in inside each env, or link envs to the account manager.</span></li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>Importing accounts from other tools works for Codex. Claude Code, Gemini CLI and QoderCLI log in inside an env or use their own settings files.</span></li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>Headless runs print the final answer; tool calls, usage and session ids come back through the Python SDK.</span></li>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>Importing accounts from other tools works for Codex only. Claude Code and Gemini CLI log in inside an env or take their own settings file with <code>-c</code>; QoderCLI logs in inside an env.</span></li>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>Headless runs print the final answer; for Codex and Claude Code, tool calls, usage and session ids come back through the Python SDK.</span></li>
         </ul>
         <a class="arrow-link" href="https://github.com/FanBB2333/CLIppet#34-how-isolation-works-and-its-limits">How isolation works, and its limits <span aria-hidden="true">→</span></a>
       </div>
