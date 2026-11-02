@@ -1,0 +1,1501 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CLIppet: every coding agent CLI, as the account you choose</title>
+<meta name="description" content="CLIppet runs Claude Code, Codex, Gemini CLI and QoderCLI inside HOME environments that each keep their own login, so several agents and accounts can work side by side, from the terminal, a TUI or Python.">
+<meta name="theme-color" content="#f4eee2">
+<link rel="icon" type="image/svg+xml" href="../resources/logo.svg">
+<script>
+(function(){
+  var d = document.documentElement;
+  d.classList.add('js');
+  // Paper is the default whatever the OS says; ink only when the visitor chose it.
+  try { var t = localStorage.getItem('clippet-theme'); if (t === 'dark' || t === 'light') d.setAttribute('data-theme', t); } catch (e) {}
+})();
+</script>
+<style>
+/* HAND_FONT_START */
+/* LXGW WenKai GB Lite, Latin subset (scripts/build_site.py).
+   Copyright 2022-2025 LXGW; Copyright 2020 The Klee Project Authors.
+   SIL Open Font License 1.1: https://openfontlicense.org */
+@font-face{font-family:"CLIppet Hand";font-display:swap;src:url(data:font/woff2;base64,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) format("woff2")}
+/* HAND_FONT_END */
+
+/* =====================================================================
+   Tokens: CLIppet's paper palette, the one the drawings in resources/
+   and the TUI use. Paper is the default; ink is the dark theme.
+   Every colour below is a token.
+   ===================================================================== */
+:root{
+  color-scheme:light;
+  --bg:#f4eee2;            /* the sheet */
+  --surface:#fcf8f0;       /* paper cards */
+  --surface-2:#efe6d6;     /* chips, controls, hover */
+  --well:#f6efe3;          /* code wells */
+  --sb-bg:#f9f4ea;         /* storyboard sheet */
+  --border:#e4d9c6;
+  --border-strong:#cfc2ac;
+  --line:#3a2f25;          /* ink for the hand-drawn outlines */
+  --shade:#ddd0b8;         /* the wash under a card */
+  --text:#2f261d;
+  --text-2:#574a3c;
+  --text-3:#6b5c48;
+  --code:#3b3027;
+  --accent:#a14e2b;        /* terracotta: text, icons, filled buttons */
+  --accent-fill:#c2663f;   /* decorative strokes and fills */
+  --accent-rgb:194 102 63;
+  --on-accent:#fcf8f0;
+  --ok:#4a6e3e; --ok-fill:#6f9a61;
+  --warn:#7c5410; --warn-rgb:179 127 34;
+  --info:#2f6496; --plum:#6c4f91;
+  --syn-str:#4a6e3e; --syn-num:#2f6496;
+  --night:#2b241e; --night-ink:#ece2d3; --night-sub:#b3a38c;
+  --mk-ink:#2f261d; --mk-paper:#fcf8f0; --mk-wash:#eadcc3; --mk-brand:#c2663f;
+  --a-claude:#6c4f91; --a-codex:#4a6e3e; --a-gemini:#a14e2b; --a-qoder:#2f6496;
+  --nav-bg:rgba(244,238,226,.86);
+  --float-bg:rgba(252,248,240,.94);
+  --hover:rgba(74,52,32,.06);
+  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .36 0 0 0 0 .27 0 0 0 0 .18 0 0 0 .6 -.22'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
+  --dots:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='2' cy='2' r='1.15' fill='%237a5f48' fill-opacity='.30'/%3E%3C/svg%3E");
+  --pencil:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='6'%3E%3Cpath d='M0 3C46 2 98 4.2 150 3.1S262 1.9 318 3.3 430 4.1 486 2.8 572 2.6 600 3' fill='none' stroke='%23cbbda5' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  --scribble:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 16' preserveAspectRatio='none'%3E%3Cpath d='M4 10C52 5 96 12.5 150 8.2S246 5 296 9' fill='none' stroke='%23c2663f' stroke-width='3.2' stroke-linecap='round' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M12 12.4C70 9.6 140 13.2 210 10.4S270 9.4 290 11' fill='none' stroke='%23c2663f' stroke-opacity='.35' stroke-width='2' stroke-linecap='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
+
+  --radius:20px;
+  --radius-sm:12px;
+  --hand:"CLIppet Hand","Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","Helvetica Neue",Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#1b1714;            /* ink: a dark kraft sheet */
+  --surface:#24201b;
+  --surface-2:#302922;
+  --well:#181411;
+  --sb-bg:#201c18;
+  --border:#3a322a;
+  --border-strong:#54493d;
+  --line:#d8cab6;
+  --shade:#0d0a08;
+  --text:#ece2d3;
+  --text-2:#c6b8a4;
+  --text-3:#a5947d;
+  --code:#e0d4c3;
+  --accent:#e0905f; --accent-fill:#d9804f; --accent-rgb:217 128 79; --on-accent:#1b1714;
+  --ok:#9cc489; --ok-fill:#8cb878;
+  --warn:#e6b866; --warn-rgb:224 173 76;
+  --info:#8db8e2; --plum:#c0a8e0;
+  --syn-str:#9cc489; --syn-num:#8db8e2;
+  --night:#110e0b; --night-ink:#ece2d3; --night-sub:#a3927b;
+  --mk-ink:#ece2d3; --mk-paper:#24201b; --mk-wash:#3b3129; --mk-brand:#d9804f;
+  --a-claude:#c0a8e0; --a-codex:#9cc489; --a-gemini:#e0905f; --a-qoder:#8db8e2;
+  --nav-bg:rgba(27,23,20,.86);
+  --float-bg:rgba(36,32,27,.94);
+  --hover:rgba(255,240,225,.06);
+  --grain:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .95 0 0 0 0 .9 0 0 0 0 .82 0 0 0 .45 -.22'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)'/%3E%3C/svg%3E");
+  --dots:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='2' cy='2' r='1.15' fill='%23fff3e6' fill-opacity='.10'/%3E%3C/svg%3E");
+  --pencil:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='6'%3E%3Cpath d='M0 3C46 2 98 4.2 150 3.1S262 1.9 318 3.3 430 4.1 486 2.8 572 2.6 600 3' fill='none' stroke='%2354493d' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  --scribble:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 16' preserveAspectRatio='none'%3E%3Cpath d='M4 10C52 5 96 12.5 150 8.2S246 5 296 9' fill='none' stroke='%23d9804f' stroke-width='3.2' stroke-linecap='round' vector-effect='non-scaling-stroke'/%3E%3Cpath d='M12 12.4C70 9.6 140 13.2 210 10.4S270 9.4 290 11' fill='none' stroke='%23d9804f' stroke-opacity='.35' stroke-width='2' stroke-linecap='round' vector-effect='non-scaling-stroke'/%3E%3C/svg%3E");
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;transition:background-color .3s,color .3s}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:var(--grain);opacity:.55}
+::selection{background:rgb(var(--accent-rgb) / .3);color:var(--text)}
+a{color:inherit;text-decoration:none}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:10px}
+code,pre,kbd{font-family:var(--mono)}
+p code,li code,td code,.allcmds code,.inline-code{font-size:.86em;background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:.08em .38em;color:var(--text);overflow-wrap:anywhere}
+kbd{display:inline-block;font:600 11.5px/1 var(--mono);padding:4px 6px 3px;border:1px solid var(--border-strong);border-bottom-width:2px;border-radius:6px;background:var(--surface);color:var(--text);white-space:nowrap}
+.wrap{width:min(1160px,100% - 32px);margin-inline:auto}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.mk{display:block;flex:none}
+
+/* ---------- hand-drawn outlines ----------
+   The script traces every .sk with the pen of scripts/draw_art.py: a wash
+   under it, the paper, and the ink line drawn twice. Without the script the
+   CSS border below stands in. */
+.sk{position:relative;isolation:isolate;--sk-fill:var(--surface);--sk-line:var(--line);background:var(--sk-fill);border:1.5px solid var(--sk-line)}
+.sk > svg.sk-ink{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;z-index:-1;pointer-events:none}
+.sk-ink .sh{fill:var(--shade);opacity:.75}
+.sk-ink .bs{fill:var(--surface)}
+.sk-ink .fl{fill:var(--sk-fill)}
+.sk-ink .i1,.sk-ink .i2{fill:none;stroke:var(--sk-line);stroke-linecap:round;stroke-linejoin:round}
+.sk-ink .i1{stroke-width:1.6px}
+.sk-ink .i2{stroke-width:1.1px;stroke-opacity:.32}
+.sk.drawn{background:transparent!important;border-color:transparent!important;box-shadow:none!important}
+.pencil{height:6px;background:var(--pencil) repeat-x 0 50%/600px 6px}
+
+/* ---------- nav ---------- */
+.nav{position:sticky;top:0;z-index:50;background:var(--nav-bg);backdrop-filter:saturate(140%) blur(14px);-webkit-backdrop-filter:saturate(140%) blur(14px)}
+.nav::after{content:"";position:absolute;left:0;right:0;bottom:-3px;height:6px;background:var(--pencil) repeat-x 0 50%/600px 6px}
+.nav .wrap{display:flex;align-items:center;gap:24px;height:64px}
+.brand{display:flex;align-items:center;gap:9px;font:400 24px/1 var(--hand);letter-spacing:-.01em}
+.brand .mk{width:32px;height:32px}
+.nav-links{display:flex;gap:2px;margin-left:auto}
+.nav-links a{color:var(--text-2);font-size:14px;padding:6px 11px;border-radius:999px;transition:color .15s,background .15s}
+.nav-links a:hover{color:var(--text);background:var(--hover)}
+.nav-tools{display:flex;align-items:center;gap:10px}
+.theme-toggle{display:none;appearance:none;width:38px;height:38px;place-items:center;padding:0;border-radius:999px;color:var(--text-2);cursor:pointer;transition:color .15s}
+.js .theme-toggle{display:inline-grid}
+.theme-toggle:hover{color:var(--text)}
+.theme-toggle svg{width:17px;height:17px}
+.theme-toggle .i-sun{display:none}
+:root[data-theme="dark"] .theme-toggle .i-sun{display:block}
+:root[data-theme="dark"] .theme-toggle .i-moon{display:none}
+.nav-gh{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:550;padding:8px 15px;border-radius:999px;transition:transform .15s}
+.nav-gh:hover{transform:translate(-1px,-1px)}
+.nav-gh svg{width:16px;height:16px}
+@media (max-width:900px){.nav-links{display:none}.nav-tools{margin-left:auto}}
+
+/* ---------- hero ---------- */
+.hero{position:relative;overflow:hidden;padding:76px 0 76px}
+.hero::after,section.sec::after,.band::after{content:"";position:absolute;left:0;right:0;bottom:-3px;height:6px;background:var(--pencil) repeat-x 0 50%/600px 6px}
+.dotted{position:absolute;inset:0;pointer-events:none;background-image:var(--dots);background-size:24px 24px;
+  -webkit-mask-image:radial-gradient(ellipse 70% 55% at 50% 0%,#000 30%,transparent 75%);mask-image:radial-gradient(ellipse 70% 55% at 50% 0%,#000 30%,transparent 75%)}
+.hero-copy{position:relative;text-align:center;max-width:900px;margin:0 auto}
+.pill{display:inline-flex;align-items:center;gap:10px;padding:6px 15px 6px 7px;border-radius:999px;font-size:13px;color:var(--text-2);transition:transform .2s}
+.pill:hover{transform:translate(-1px,-1px)}
+.pill .dot{display:inline-grid;place-items:center;font:600 11.5px/1 var(--sans);color:var(--on-accent);background:var(--accent);border-radius:999px;padding:4px 9px}
+.pill .arr{color:var(--text-3)}
+h1{margin:26px 0 0;display:flex;align-items:center;justify-content:center;gap:.14em;font:400 clamp(62px,10.6vw,126px)/1 var(--hand);letter-spacing:-.02em}
+h1 .mk{width:.92em;height:.92em;margin-top:-.08em}
+h1 .word{padding-bottom:.1em;background:var(--scribble) no-repeat 0 100%/100% .2em}
+h1 .w{color:var(--text)}
+h1 .g{color:var(--accent-fill)}
+.tagline{margin:22px auto 0;max-width:820px;font:400 clamp(21px,2.5vw,28px)/1.4 var(--hand);color:var(--text)}
+.lead{margin:18px auto 0;max-width:700px;color:var(--text-2);font-size:16px}
+.facts-row{list-style:none;margin:28px auto 0;padding:0;display:flex;flex-wrap:wrap;justify-content:center}
+.facts-row li{display:flex}
+.facts-row li+li{border-left:1.5px dashed var(--border-strong)}
+.facts-row a,.facts-row .fr-c{display:flex;align-items:center;gap:10px;padding:3px 22px;color:var(--text-2)}
+.facts-row a:hover b,.facts-row a:hover .fr-i{color:var(--accent)}
+.fr-i{width:20px;height:20px;flex:none;color:var(--text-3);transition:color .15s}
+.fr-t{display:flex;flex-direction:column;align-items:flex-start;text-align:left;line-height:1.2}
+.fr-t b{font-size:14px;font-weight:600;color:var(--text);transition:color .15s}
+.fr-t small{margin-top:3px;font-size:11.5px;color:var(--text-3)}
+@media (max-width:560px){.facts-row{flex-wrap:nowrap}.facts-row a,.facts-row .fr-c{gap:8px;padding:3px 11px}}
+.ctas{margin-top:30px;display:flex;flex-wrap:wrap;justify-content:center;gap:14px}
+.btn{display:inline-flex;align-items:center;gap:10px;height:50px;padding:0 24px;border-radius:999px;font-size:15px;font-weight:600;letter-spacing:-.005em;transition:transform .15s}
+.btn svg{width:17px;height:17px}
+.btn-primary{--sk-fill:var(--accent);color:var(--on-accent)}
+.btn-ghost{color:var(--text)}
+.btn:hover{transform:translate(-1px,-2px)}
+.btn .k{transition:transform .15s}
+.btn:hover .k{transform:translateX(3px)}
+
+/* ---------- storyboard (hero animation) ---------- */
+.sb{margin:56px 0 0;border-radius:28px;--sk-fill:var(--sb-bg)}
+.sb::before{content:"";position:absolute;inset:10px;border-radius:22px;background-image:var(--dots);background-size:24px 24px;opacity:.8;pointer-events:none}
+/* default = a still frame (no JS, or reduced motion) */
+.sb-canvas{position:relative;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px;padding:44px;align-items:center}
+.sb .scene{display:none}
+.sb .scene.keep{display:flex;justify-content:center;min-width:0}
+@media (max-width:760px){.sb-canvas{grid-template-columns:minmax(0,1fr);padding:22px 16px;gap:18px}}
+.sb.anim .sb-canvas{display:block;aspect-ratio:2/1;padding:0;overflow:hidden;border-radius:26px}
+@media (max-width:960px){.sb.anim .sb-canvas{aspect-ratio:16/11}}
+@media (max-width:600px){.sb.anim .sb-canvas{aspect-ratio:4/5}}
+.sb.anim .scene{display:flex;position:absolute;inset:0;flex-direction:column;align-items:center;justify-content:center;padding:28px 24px;opacity:0;visibility:hidden;transform:translateY(12px) scale(.985);filter:blur(4px);
+  transition:opacity .6s ease,transform .8s cubic-bezier(.2,.7,.2,1),filter .6s ease,visibility 0s linear .6s}
+.sb.anim .scene.on{opacity:1;visibility:visible;transform:none;filter:none;transition:opacity .6s ease,transform .8s cubic-bezier(.2,.7,.2,1),filter .6s ease,visibility 0s}
+.sb.paused *,.sb.paused *::before,.sb.paused *::after{animation-play-state:paused!important}
+@media (max-width:600px){.sb.anim .scene{padding:20px 16px}}
+
+.sb-ctl{display:none;position:absolute;top:14px;right:14px;z-index:6;appearance:none;width:34px;height:34px;padding:0;place-items:center;border:1.5px solid var(--border-strong);border-radius:999px;background:var(--float-bg);color:var(--text-2);cursor:pointer;transition:color .15s,border-color .15s}
+.sb.anim .sb-ctl{display:grid}
+.sb-ctl:hover{color:var(--text);border-color:var(--line)}
+.sb-ctl svg{width:14px;height:14px}
+.sb-ctl .i-play{display:none}
+.sb-ctl[aria-pressed="true"] .i-play{display:block}
+.sb-ctl[aria-pressed="true"] .i-pause{display:none}
+
+.sb-mark{display:flex;align-items:center;gap:10px;font:400 26px/1 var(--hand);color:var(--text);margin-bottom:20px}
+.sb-mark .mk{width:36px;height:36px}
+.sb-headline{margin:0;text-align:center;font:400 clamp(28px,4.4vw,54px)/1.14 var(--hand);letter-spacing:-.015em;color:var(--text);max-width:16em}
+.sb-headline em{font-style:normal;color:var(--accent);padding-bottom:.06em;background:var(--scribble) no-repeat 0 100%/100% .22em}
+@media (max-width:600px){.br-d{display:none}}
+
+/* scene: choose an env + type the command */
+.pick{width:min(620px,100%)}
+.pick-l{font:400 18px/1 var(--hand);color:var(--text-3);margin:0 0 12px 2px}
+.pchips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media (max-width:600px){.pchips{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.pchip{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:var(--radius-sm);font-size:13px;min-width:0;transition:opacity .45s ease,transform .45s cubic-bezier(.2,.7,.2,1)}
+.pc-id{font:600 13.5px/1 var(--mono);color:var(--text)}
+.pc-a{color:var(--text-3);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pc-ck{position:absolute;top:-8px;right:-8px;width:20px;height:20px;border-radius:50%;box-shadow:0 0 0 2px var(--sb-bg);display:grid;place-items:center;background:var(--accent);color:var(--on-accent);opacity:0;transform:scale(.6);transition:opacity .2s,transform .25s cubic-bezier(.3,1.6,.5,1)}
+.pc-ck svg{width:11px;height:11px}
+.pchip.sel{--sk-fill:rgb(var(--accent-rgb) / .14);--sk-line:var(--accent)}
+.pchip.sel .pc-ck{opacity:1;transform:none}
+.sb.anim .pchip{opacity:0;transform:translateY(8px)}
+.sb.anim .pchip.in{opacity:1;transform:none}
+.ag{width:9px;height:9px;flex:none;border-radius:50%;background:var(--c,var(--border-strong))}
+.ag.claude{--c:var(--a-claude)}.ag.codex{--c:var(--a-codex)}.ag.gemini{--c:var(--a-gemini)}.ag.qoder{--c:var(--a-qoder)}
+.prompt{margin-top:16px;border-radius:16px;transition:opacity .5s ease,transform .6s cubic-bezier(.2,.7,.2,1)}
+.sb.anim .prompt{opacity:0;transform:translateY(10px)}
+.sb.anim .prompt.in{opacity:1;transform:none}
+.prompt-in{padding:14px 16px 6px;min-height:52px;font:13px/1.65 var(--mono);color:var(--code);white-space:pre-wrap;overflow-wrap:anywhere}
+.caret{display:inline-block;width:7px;height:1.1em;margin-left:1px;vertical-align:-.18em;background:var(--accent);animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.prompt-f{display:flex;align-items:center;gap:8px;padding:8px 10px 10px 12px}
+.pf-file{display:inline-flex;align-items:center;gap:6px;padding:5px 9px;border:1px solid var(--border);border-radius:8px;font:12px/1.2 var(--mono);color:var(--text-2);background:var(--well);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-file svg{width:13px;height:13px;flex:none;color:var(--text-3)}
+.go{margin-left:auto;display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-size:12.5px;font-weight:600;color:var(--on-accent);--sk-fill:var(--accent);transition:transform .12s;flex:none}
+.go.pressed{transform:scale(.95)}
+
+/* scene: shimmer */
+.shim-row{display:flex;align-items:center;gap:14px}
+.spin{font:400 30px/1 var(--hand);color:var(--accent-fill);animation:spin 1.6s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+.shim{margin:0;font:400 clamp(26px,3.6vw,40px)/1.1 var(--hand);color:var(--text)}
+.shim span{animation:shim 1.8s ease-in-out infinite;animation-delay:calc(var(--i) * 55ms)}
+@keyframes shim{0%,100%{opacity:.32}45%{opacity:1}}
+
+/* scene: launch steps */
+.pcard{width:min(500px,100%);border-radius:18px;padding:16px 18px 10px}
+.pcard-h{display:flex;align-items:center;justify-content:space-between;gap:12px;font:400 19px/1.2 var(--hand);color:var(--text);padding-bottom:8px}
+.pcard-h code{font:12px/1 var(--mono);color:var(--text-3)}
+@media (max-width:600px){.pcard-h{flex-wrap:wrap;row-gap:6px}.pcard-h code{font-size:11px}}
+.steps{list-style:none;margin:0;padding:0}
+.si{display:flex;align-items:flex-start;gap:12px;padding:7px 0;font-size:14px;line-height:1.45;color:var(--text);overflow:hidden;transition:opacity .45s ease,max-height .5s ease,padding .5s ease}
+.si-m{position:relative;width:22px;height:22px;flex:none;border-radius:50%;display:grid;place-items:center;border:1.5px solid var(--border-strong);font:600 11px/1 var(--sans);color:var(--text-3);transition:background .25s,border-color .25s,color .25s}
+.si-m svg{position:absolute;width:12px;height:12px;opacity:0;transform:scale(.5);transition:opacity .2s,transform .3s cubic-bezier(.3,1.6,.5,1)}
+.si-t{padding-top:1px;text-decoration:line-through;text-decoration-color:transparent;transition:text-decoration-color .45s,color .45s}
+.si-t code{font-size:.9em;background:none;border:0;padding:0;color:inherit}
+.si.active .si-m{border-color:var(--accent);border-top-color:transparent;animation:spin 1s linear infinite}
+.si.active .si-m b{animation:spin 1s linear infinite reverse}
+.si.done .si-m{background:var(--accent);border-color:var(--accent);color:transparent;animation:none}
+.si.done .si-m b{opacity:0}
+.si.done .si-m svg{opacity:1;transform:none;color:var(--on-accent)}
+.si.done .si-t{color:var(--text-3);text-decoration-color:currentColor}
+.sb.anim .si{opacity:0;max-height:0;padding:0}
+.sb.anim .si.shown{opacity:1;max-height:64px;padding:7px 0}
+
+/* scene: who is Codex in work? */
+.rcard{width:min(560px,100%);border-radius:18px;padding:16px}
+.rc-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--text-3)}
+.rc-file{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono)}
+.rc-file svg{width:14px;height:14px}
+.rc-tag{margin-left:auto;padding:3px 9px;border:1px dashed var(--border-strong);border-radius:999px;font-size:11.5px;color:var(--text-3)}
+.rc-q{margin:14px 2px 14px;font:400 clamp(21px,2.5vw,27px)/1.2 var(--hand);color:var(--text)}
+.rc-q code{font-size:.8em;background:none;border:0;padding:0;color:var(--accent)}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;container-type:inline-size}
+.tile{--sk-fill:var(--night);--sk-line:var(--line);border-radius:12px;color:var(--night-ink);padding:18px 10px 14px;text-align:center;min-width:0;transition:opacity .45s ease,transform .5s cubic-bezier(.2,.7,.2,1)}
+.tile b{display:block;font:400 clamp(11px,5.4cqw,28px)/1 var(--hand);white-space:nowrap}
+@media (max-width:600px){.tiles{gap:8px}.tile{padding:14px 4px 12px}}
+.tile span{display:block;margin-top:10px;font-size:11.5px;line-height:1.3;color:var(--night-sub)}
+.sb.anim .tile{opacity:0;transform:translateY(10px) scale(.97)}
+.sb.anim .tile.in{opacity:1;transform:none}
+
+/* scene: runs in several envs */
+.dcard{width:min(470px,100%);border-radius:18px;padding:18px 18px 10px}
+.dc-h{display:flex;align-items:center;gap:9px;font:400 21px/1.2 var(--hand);color:var(--text)}
+.dc-h .mk{width:26px;height:26px}
+.dc-flag{margin:10px 0 6px;font:12px/1.4 var(--mono);color:var(--text-3);overflow-wrap:anywhere}
+.drows{list-style:none;margin:0;padding:0}
+.drow{display:flex;align-items:center;gap:12px;padding:10px 2px;border-top:1.5px dashed var(--border);font-size:13.5px;color:var(--text-2);transition:opacity .4s ease,transform .45s cubic-bezier(.2,.7,.2,1)}
+.drow code{font:600 12.5px/1 var(--mono);color:var(--text-3);flex:none}
+.drow .dn{font:600 13px/1 var(--mono);color:var(--text)}
+.drow .dt{margin-left:auto;font:12px/1 var(--mono);color:var(--text-3);white-space:nowrap}
+.drow .st{width:18px;text-align:center;font:400 17px/1 var(--hand);color:var(--ok)}
+.drow .st::before{content:"✓"}
+.sb.anim .drow{opacity:0;transform:translateX(-8px)}
+.sb.anim .drow.in{opacity:1;transform:none}
+.sb.anim .drow .dt{opacity:0;transition:opacity .3s}
+.sb.anim .drow.done .dt{opacity:1}
+.sb.anim .drow .st{color:var(--accent-fill)}
+.sb.anim .drow .st::before{content:"✻";display:inline-block;animation:spin 1.4s linear infinite}
+.sb.anim .drow.done .st{color:var(--ok)}
+.sb.anim .drow.done .st::before{content:"✓";animation:none}
+
+/* scene: end */
+.end-logo{display:flex;align-items:center;gap:12px;font:400 clamp(40px,5.4vw,62px)/1 var(--hand);color:var(--text)}
+.end-logo .mk{width:1em;height:1em}
+.end-sub{margin:14px 0 0;font:400 19px/1.3 var(--hand);color:var(--text-2);text-align:center}
+.sb-cta{margin-top:22px;display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:999px;--sk-fill:var(--accent);color:var(--on-accent);font-size:14.5px;font-weight:600;transition:transform .15s}
+.sb-cta.pressed{transform:scale(.95)}
+
+/* cursor */
+.sb-cursor{display:none;position:absolute;left:0;top:0;z-index:5;width:24px;height:24px;pointer-events:none;opacity:0;transition:transform .9s cubic-bezier(.45,0,.2,1),opacity .35s ease}
+.sb.anim .sb-cursor{display:block}
+.sb-cursor svg{width:24px;height:24px;transform-origin:3px 3px;transition:transform .12s}
+.sb-cursor .c-fill{fill:var(--text);stroke:var(--surface)}
+.sb-cursor.down svg{transform:scale(.82)}
+.sb-cursor i{position:absolute;left:-11px;top:-11px;width:26px;height:26px;border-radius:50%;border:2px solid var(--accent);opacity:0}
+.sb-cursor.ring i{animation:ring .55s ease-out}
+@keyframes ring{0%{opacity:.8;transform:scale(.3)}100%{opacity:0;transform:scale(1.4)}}
+
+/* stage: flow + code */
+.stage{position:relative;margin-top:26px;display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:22px;align-items:start}
+@media (max-width:960px){.stage{grid-template-columns:minmax(0,1fr)}}
+.panel{border-radius:var(--radius);min-width:0}
+.panel-h{position:relative;display:flex;align-items:center;gap:10px;padding:13px 16px;font-size:12.5px;line-height:1;color:var(--text-3)}
+.panel-h::after{content:"";position:absolute;left:10px;right:10px;bottom:-3px;height:6px;background:var(--pencil) repeat-x 0 50%/600px 6px}
+.lights{display:flex;gap:6px}
+.lights i{width:10px;height:10px;border-radius:50%;border:1.3px solid var(--border-strong)}
+.lights i:nth-child(1){background:#e0705a}.lights i:nth-child(2){background:#e0ad4c}.lights i:nth-child(3){background:#8cb878}
+
+.flow{padding:18px;display:flex;flex-direction:column}
+.node{--sk-fill:var(--well);border-radius:14px;padding:12px 14px}
+.node-t{display:flex;align-items:center;gap:10px;font:400 18px/1.2 var(--hand)}
+.node-t svg{width:18px;height:18px;flex:none;color:var(--text-3)}
+.node-s{margin:4px 0 0 28px;font-size:12.5px;color:var(--text-2);line-height:1.45}
+.node-s code{font-size:.92em}
+.node.layer{--sk-fill:rgb(var(--accent-rgb) / .12);--sk-line:var(--accent)}
+.node.layer .node-t svg{color:var(--accent)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0 28px}
+.chip{font:12px/1 var(--mono);padding:6px 8px;border-radius:8px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text-2);white-space:nowrap}
+.homes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0 0 28px}
+.home{border:1px dashed var(--border-strong);border-radius:10px;padding:7px 9px;background:var(--surface);font:11.5px/1.35 var(--mono);display:flex;flex-direction:column;gap:2px;min-width:0}
+.home b{color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home span{color:var(--accent);font-family:var(--sans);font-size:11.5px}
+.node .ags{display:flex;flex-wrap:wrap;gap:6px 14px;margin:10px 0 0 28px;font:12px/1 var(--mono);color:var(--text-2)}
+.node .ags span{display:inline-flex;align-items:center;gap:6px}
+.link{position:relative;height:28px;margin-left:21px;width:10px}
+.link svg{position:absolute;left:0;top:0;width:10px;height:28px;overflow:visible}
+.link path{fill:none;stroke:var(--border-strong);stroke-width:1.8;stroke-linecap:round}
+.link::after{content:"";position:absolute;left:2.5px;top:0;width:6px;height:6px;border-radius:50%;background:var(--accent-fill);animation:drop 2.4s cubic-bezier(.5,0,.5,1) infinite}
+.link:nth-of-type(4)::after{animation-delay:.8s}
+.link:nth-of-type(6)::after{animation-delay:1.6s}
+@keyframes drop{0%{top:-4px;opacity:0}20%{opacity:1}80%{opacity:1}100%{top:24px;opacity:0}}
+
+/* code window */
+.tabs{display:flex;gap:2px;padding:8px 8px 0;overflow-x:auto;scrollbar-width:none;position:relative}
+.tabs::after{content:"";position:absolute;left:10px;right:10px;bottom:-3px;height:6px;background:var(--pencil) repeat-x 0 50%/600px 6px}
+.tabs::-webkit-scrollbar{display:none}
+.tab{appearance:none;background:none;border:0;color:var(--text-3);font:400 17px/1 var(--hand);padding:10px 13px 12px;border-radius:10px 10px 0 0;cursor:pointer;position:relative;white-space:nowrap;transition:color .15s,background .15s}
+.tab:hover{color:var(--text);background:var(--hover)}
+.tab[aria-selected="true"]{color:var(--text)}
+.tab[aria-selected="true"]::after{content:"";position:absolute;left:8px;right:8px;bottom:-2px;height:7px;z-index:1;background:var(--scribble) no-repeat 0 50%/100% 100%}
+.tabs{display:none}
+.js .tabs{display:flex}
+.code-panel + .code-panel{border-top:1.5px dashed var(--border)}
+.js .code-panel + .code-panel{border-top:0}
+.cp-h{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px 0}
+.cp-cap{font-size:13.5px;color:var(--text-2);margin:0}
+.cp-cap b{color:var(--text);font-weight:600}
+.nojs-title{display:block}
+.js .nojs-title{display:none}
+.copy{display:none;appearance:none;border:1.5px solid var(--border-strong);background:var(--surface);color:var(--text-3);font:500 12px/1 var(--sans);padding:6px 10px;border-radius:999px;cursor:pointer;flex:none;transition:color .15s,border-color .15s}
+.js .copy{display:inline-block}
+.copy:hover{color:var(--text);border-color:var(--line)}
+.copy.done{color:var(--ok);border-color:var(--ok-fill)}
+pre{margin:0;padding:14px 16px 18px;overflow-x:auto;font-size:13px;line-height:1.7;color:var(--code);tab-size:2}
+pre code{white-space:pre}
+@media (max-width:640px){pre{font-size:12px;padding:12px 14px 16px}}
+.t-c{color:var(--text-3);font-style:italic}
+.t-k{color:var(--accent)}
+.t-s{color:var(--syn-str)}
+.t-n{color:var(--syn-num)}
+.t-f{color:var(--text);font-weight:600}
+.t-p{color:var(--text-3);user-select:none}
+.t-o{color:var(--text-3)}
+
+/* ---------- facts ---------- */
+.facts{margin-top:26px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-radius:var(--radius)}
+.fact{padding:22px 24px}
+.fact + .fact{border-left:1.5px dashed var(--border-strong)}
+.fact-n{font:400 46px/1 var(--hand);color:var(--text)}
+.fact-n small{font-size:.5em;color:var(--accent)}
+.fact-l{margin-top:8px;font-size:13.5px;color:var(--text-2);line-height:1.4}
+@media (max-width:760px){.facts{grid-template-columns:repeat(2,minmax(0,1fr))}.fact:nth-of-type(3){border-left:0}.fact:nth-of-type(n+3){border-top:1.5px dashed var(--border-strong)}.fact{padding:16px}.fact-n{font-size:36px}}
+
+/* ---------- sections ---------- */
+section.sec{padding:104px 0;position:relative}
+@media (max-width:760px){section.sec{padding:72px 0}.hero{padding:56px 0 56px}.sb{margin-top:40px}}
+.eyebrow{display:inline-block;font:600 12.5px/1 var(--sans);letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+h2{margin:14px 0 0;font:400 clamp(34px,4.7vw,56px)/1.08 var(--hand);letter-spacing:-.015em;max-width:820px}
+h2 .dim{color:var(--text-3)}
+.sec-lead{margin:16px 0 0;max-width:660px;color:var(--text-2);font-size:17px}
+h3{margin:0;font:400 23px/1.25 var(--hand)}
+
+/* three ways */
+.ways{margin-top:48px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}
+@media (max-width:960px){.ways{grid-template-columns:minmax(0,1fr)}}
+.card{border-radius:var(--radius);padding:24px;min-width:0;transition:transform .25s}
+.card:hover{transform:translate(-1px,-2px)}
+.ico{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;--sk-fill:var(--surface-2);color:var(--text-2);transition:color .2s}
+.ico svg{width:20px;height:20px}
+.card:hover .ico{color:var(--accent)}
+.way-n{position:absolute;top:24px;right:24px;font:400 18px/1 var(--hand);color:var(--text-3)}
+.way h3{margin-top:20px}
+.way p{margin:10px 0 0;color:var(--text-2);font-size:15px}
+.entry{margin-top:20px;border:1.5px dashed var(--border-strong);border-radius:12px;background:var(--well)}
+.entry-l{padding:10px 12px 0;font-size:11.5px;font-weight:600;line-height:1;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3)}
+.entry pre{padding:8px 12px 12px;font-size:12px;line-height:1.6}
+.footnote{margin-top:24px;display:flex;align-items:flex-start;gap:10px;color:var(--text-2);font-size:14.5px}
+.footnote svg{width:16px;height:16px;flex:none;margin-top:3px;color:var(--accent)}
+
+/* accounts */
+.fmts{margin-top:48px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+@media (max-width:960px){.fmts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.fmts{grid-template-columns:minmax(0,1fr)}}
+.fmt{display:flex;flex-direction:column;padding:20px 22px}
+.fmt h3{font-size:22px}
+.fmt .how{align-self:flex-start;margin-top:10px;font:12px/1.3 var(--mono);padding:5px 9px;border-radius:8px;background:rgb(var(--accent-rgb) / .12);border:1px solid rgb(var(--accent-rgb) / .32);color:var(--accent);overflow-wrap:anywhere}
+.fmt p{margin:10px 0 0;color:var(--text-2);font-size:14.5px}
+.fmt.live{--sk-fill:rgb(var(--accent-rgb) / .09);--sk-line:var(--accent)}
+.fmt .tag{position:absolute;top:18px;right:18px;font:400 15px/1 var(--hand);color:var(--accent)}
+.art{position:relative;margin:44px auto 0;max-width:1060px}
+.art img{display:block;width:100%;height:auto}
+.art figcaption{margin-top:10px;text-align:center;color:var(--text-3);font-size:14px}
+.notes{margin:32px 0 0;padding:0;list-style:none;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 28px;max-width:1000px}
+@media (max-width:760px){.notes{grid-template-columns:minmax(0,1fr)}}
+.notes li{position:relative;padding-left:20px;color:var(--text-2);font-size:14.5px}
+.notes li::before{content:"✓";position:absolute;left:0;top:.05em;font:400 15px/1.4 var(--hand);color:var(--accent-fill)}
+
+/* bento */
+.bento{margin-top:48px;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:20px}
+.uc{display:flex;flex-direction:column}
+.uc .num{font:400 18px/1 var(--hand);color:var(--text-3)}
+.uc h3{margin-top:12px}
+.uc p{margin:8px 0 0;color:var(--text-2);font-size:14.5px}
+.uc .cmds{margin-top:auto;padding-top:18px;display:flex;flex-wrap:wrap;gap:6px}
+.cmd{font:12.5px/1 var(--mono);padding:7px 10px;border-radius:999px;background:rgb(var(--accent-rgb) / .12);border:1px solid rgb(var(--accent-rgb) / .32);color:var(--accent);white-space:nowrap}
+.uc .snip{margin-top:16px;border:1.5px dashed var(--border-strong);border-radius:12px;background:var(--well)}
+.uc .snip pre{font-size:12px;padding:10px 12px;line-height:1.6}
+.s4{grid-column:span 4}.s3{grid-column:span 3}.s2{grid-column:span 2}
+@media (max-width:960px){.bento{grid-template-columns:repeat(2,minmax(0,1fr))}.s4,.s3,.s2{grid-column:span 1}.s4{grid-column:span 2}.uc.wide-t{grid-column:span 2}}
+@media (max-width:640px){.bento{grid-template-columns:minmax(0,1fr)}.s4,.s3,.s2,.uc.wide-t{grid-column:span 1}}
+.allcmds{margin-top:26px;display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px;color:var(--text-2);font-size:14.5px}
+.arrow-link{display:inline-flex;align-items:center;gap:6px;color:var(--text);font-weight:600;font-size:14.5px;padding-bottom:2px;background:var(--scribble) no-repeat 0 100%/0 5px;transition:background-size .3s}
+.arrow-link:hover{background-size:100% 5px}
+.arrow-link span{transition:transform .15s;color:var(--accent)}
+.arrow-link:hover span{transform:translateX(3px)}
+
+/* tui */
+.tui{margin-top:48px;display:grid;grid-template-columns:minmax(0,8fr) minmax(0,4fr);gap:22px;align-items:start}
+@media (max-width:1060px){.tui{grid-template-columns:minmax(0,1fr)}}
+.shots{padding-bottom:6px}
+.shot{padding:16px 14px 6px}
+.shot img{display:block;width:100%;height:auto}
+.shot p{margin:6px 6px 8px;color:var(--text-3);font-size:13.5px}
+.places{list-style:none;margin:0;padding:0;display:grid;gap:14px}
+@media (max-width:1060px) and (min-width:641px){.places{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.place{padding:16px 18px}
+.place-h{display:flex;align-items:baseline;gap:10px}
+.place-h b{font:400 26px/1 var(--hand);color:var(--accent-fill)}
+.place-h h3{font-size:21px}
+.place p{margin:6px 0 0;color:var(--text-2);font-size:13.5px;line-height:1.5}
+.place .keys{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px 10px;font-size:12px;color:var(--text-3)}
+.place .keys span{display:inline-flex;align-items:center;gap:5px}
+
+/* architecture */
+.layers{margin-top:28px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px}
+@media (max-width:1060px){.layers{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.layers{grid-template-columns:minmax(0,1fr)}}
+.ly{padding:16px 16px 14px;border-radius:14px;--sk-fill:var(--tint)}
+.ly h3{font-size:20px;color:var(--c)}
+.ly .mod{display:block;margin-top:6px;font:12px/1.35 var(--mono);color:var(--accent)}
+.ly p{margin:8px 0 0;color:var(--text-2);font-size:13.5px;line-height:1.5}
+.ly.start{--c:#9e4f2f;--tint:#f5e3d6}.ly.identity{--c:#8a5d14;--tint:#f6ebd4}.ly.accounts{--c:#6c4f91;--tint:#efe7f1}.ly.adapters{--c:#2f6496;--tint:#e6edf3}.ly.sandbox{--c:#4a6e3e;--tint:#e7eee0}
+:root[data-theme="dark"] .ly{--tint:var(--surface)}
+:root[data-theme="dark"] .ly.start{--c:#e0905f}:root[data-theme="dark"] .ly.identity{--c:#e6b866}:root[data-theme="dark"] .ly.accounts{--c:#c0a8e0}:root[data-theme="dark"] .ly.adapters{--c:#8db8e2}:root[data-theme="dark"] .ly.sandbox{--c:#9cc489}
+
+/* quick start */
+.qs{margin-top:48px;display:grid;grid-template-columns:minmax(0,1fr);gap:22px}
+.step{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,7fr);gap:28px;align-items:start;border-radius:var(--radius);padding:24px}
+@media (max-width:860px){.step{grid-template-columns:minmax(0,1fr);gap:16px;padding:20px}}
+.step-n{display:inline-grid;place-items:center;width:34px;height:34px;border-radius:999px;font:400 19px/1 var(--hand);color:var(--on-accent);--sk-fill:var(--accent)}
+.step h3{margin-top:14px}
+.step p{margin:8px 0 0;color:var(--text-2);font-size:15px}
+.req{display:flex;flex-wrap:wrap;gap:8px}
+.req .chip{font:13px/1 var(--sans);padding:9px 12px;border-radius:999px;color:var(--text);background:var(--surface-2);border-color:var(--border)}
+.req-note{margin-top:12px;color:var(--text-2);font-size:13.5px}
+.mini{--sk-fill:var(--well);border-radius:14px;min-width:0}
+.mini .panel-h{padding:10px 14px}
+.mini .panel-h .copy{margin-left:auto}
+.mini pre{font-size:13px}
+
+/* limitations (semantic: warn) */
+.limit{margin-top:48px;display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:28px;padding:32px;border-radius:var(--radius);--sk-fill:rgb(var(--warn-rgb) / .10);--sk-line:var(--warn)}
+@media (max-width:860px){.limit{grid-template-columns:minmax(0,1fr);padding:22px}}
+.warn{display:flex;gap:14px;align-items:flex-start}
+.warn .ico{color:var(--warn);--sk-fill:rgb(var(--warn-rgb) / .16);--sk-line:var(--warn);flex:none}
+.warn p{margin:0;color:var(--text);font:400 21px/1.5 var(--hand)}
+@media (max-width:600px){.warn p{font-size:18px}}
+.limit ul{margin:0;padding:0;list-style:none;display:grid;gap:12px}
+.limit li{position:relative;display:flex;gap:12px;color:var(--text-2);font-size:15px;padding-bottom:12px}
+.limit li + li{padding-top:2px}
+.limit li:not(:last-child)::after{content:"";position:absolute;left:0;right:0;bottom:-3px;height:6px;background:var(--pencil) repeat-x 0 50%/600px 6px;opacity:.8}
+.limit li svg{width:16px;height:16px;flex:none;margin-top:4px;color:var(--warn)}
+.limit .arrow-link{margin-top:18px}
+
+/* cta band */
+.band{position:relative;overflow:hidden;padding:96px 0;text-align:center}
+.band .dotted{-webkit-mask-image:radial-gradient(ellipse 60% 80% at 50% 100%,#000 20%,transparent 75%);mask-image:radial-gradient(ellipse 60% 80% at 50% 100%,#000 20%,transparent 75%)}
+.band h2{position:relative;margin-inline:auto}
+.band .eyebrow{position:relative}
+.band .cmdline{margin:30px auto 0;display:inline-flex;max-width:100%;align-items:center;gap:12px;border-radius:14px;padding:13px 18px;font:13.5px/1.4 var(--mono);color:var(--text);overflow-x:auto}
+.band .cmdline code{white-space:nowrap}
+@media (max-width:600px){.band .cmdline{display:flex;align-items:flex-start;text-align:left;overflow:visible}.band .cmdline code{white-space:normal;overflow-wrap:anywhere}}
+.band p.sub{position:relative;margin:18px auto 0;max-width:580px;color:var(--text-2)}
+.band .ctas{position:relative}
+
+/* footer */
+footer{padding:64px 0 40px;color:var(--text-2);font-size:14px}
+.f-grid{display:grid;grid-template-columns:minmax(0,1.6fr) repeat(3,minmax(0,1fr));gap:32px}
+@media (max-width:860px){.f-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.f-brand{grid-column:span 2}}
+.f-brand p{margin:14px 0 0;max-width:360px}
+.f-h{font-size:12px;font-weight:600;line-height:1;letter-spacing:.1em;text-transform:uppercase;color:var(--text-3);margin:0 0 14px}
+footer ul{list-style:none;margin:0;padding:0;display:grid;gap:9px}
+footer ul a{transition:color .15s}
+footer ul a:hover{color:var(--text)}
+.built{margin-top:16px;display:grid;gap:6px;font-size:13.5px}
+.built b{color:var(--text);font-weight:600}
+.f-bottom{position:relative;margin-top:48px;padding-top:24px;display:flex;flex-wrap:wrap;gap:10px 24px;justify-content:space-between;font-size:13px;color:var(--text-3)}
+.f-bottom::before{content:"";position:absolute;left:0;right:0;top:0;height:6px;background:var(--pencil) repeat-x 0 50%/600px 6px}
+.f-bottom a{color:var(--text-2)}
+.f-bottom a:hover{color:var(--text)}
+
+/* gentle scroll reveal (only when JS + motion allowed) */
+.motion .rv{opacity:0;transform:translateY(14px);transition:opacity .7s cubic-bezier(.2,.7,.2,1) var(--d,0ms),transform .7s cubic-bezier(.2,.7,.2,1) var(--d,0ms)}
+.motion .rv.in{opacity:1;transform:none}
+.motion .card.rv.in:hover{transform:translate(-1px,-2px);transition-delay:0ms}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+<!-- MARK_START -->
+<symbol id="mark" viewBox="0 0 64 64"><path d="M26.5,6.4C28.6,6.7 35,7.8 39.3,8.5C43.6,9.2 49.8,10.2 52.1,10.6C54.4,11 52.8,10.8 53.1,10.9C53.5,11.1 53.8,11.3 54,11.5C54.3,11.7 54.5,12 54.8,12.2C55,12.5 55.1,12.8 55.2,13.2C55.4,13.5 55.5,13.9 55.5,14.2C55.5,14.5 55.9,12.6 55.5,15.3C55.1,17.9 53.9,25.2 53.1,30.2C52.3,35.2 51.2,42.5 50.8,45.1C50.3,47.8 50.6,45.8 50.5,46.1C50.4,46.4 50.2,46.7 49.9,47C49.7,47.3 49.5,47.5 49.2,47.7C48.9,47.9 48.6,48.1 48.3,48.2C47.9,48.4 47.6,48.4 47.3,48.5C46.9,48.5 48.5,48.8 46.2,48.5C43.9,48.1 37.7,47.1 33.4,46.4C29.1,45.8 22.9,44.8 20.5,44.4C18.2,44 19.9,44.3 19.5,44.1C19.2,44 18.9,43.8 18.7,43.6C18.4,43.4 18.1,43.1 17.9,42.8C17.7,42.5 17.6,42.2 17.4,41.9C17.3,41.6 17.2,41.2 17.2,40.9C17.2,40.5 16.8,42.5 17.2,39.8C17.6,37.2 18.8,30 19.6,25.1C20.4,20.1 21.5,12.9 22,10.3C22.4,7.6 22.1,9.6 22.2,9.3C22.4,9 22.6,8.6 22.8,8.4C23,8.1 23.3,7.9 23.6,7.7C23.8,7.5 24.1,7.3 24.5,7.2C24.8,7 25.1,7 25.5,6.9C25.8,6.9 26.4,7 26.5,6.9C26.7,6.9 24.3,6.1 26.5,6.4Z" style="fill:var(--mk-wash)"/><path d="M52,10.2C52.1,10.2 52.6,10.3 53,10.5C53.3,10.6 53.6,10.8 53.8,11C54.1,11.2 54.4,11.5 54.6,11.8C54.8,12 54.9,12.4 55,12.7C55.2,13 55.2,13.4 55.3,13.7C55.3,14.1 55.7,12.1 55.2,14.8C54.8,17.4 53.4,24.7 52.6,29.7C51.7,34.6 50.6,41.9 50.2,44.5C49.7,47.2 50,45.2 49.9,45.5C49.8,45.8 49.6,46.1 49.4,46.4C49.1,46.7 48.9,46.9 48.6,47.1C48.3,47.3 48,47.5 47.7,47.6C47.4,47.8 47,47.8 46.7,47.9C46.3,47.9 47.9,48.2 45.6,47.9C43.3,47.5 37.1,46.6 32.8,45.9C28.6,45.2 22.4,44.2 20.2,43.7C17.9,43.3 19.5,43.6 19.2,43.4C18.9,43.3 18.6,43.1 18.3,42.9C18.1,42.7 17.8,42.4 17.6,42.1C17.4,41.8 17.3,41.5 17.2,41.2C17,40.9 17,40.5 16.9,40.2C16.9,39.8 16.6,41.8 17,39.1C17.4,36.5 18.6,29.2 19.4,24.3C20.1,19.3 21,12.1 21.4,9.5C21.8,6.9 21.6,8.8 21.7,8.5C21.9,8.2 22,7.9 22.3,7.6C22.5,7.3 22.7,7.1 23,6.9C23.3,6.7 23.6,6.5 23.9,6.4C24.2,6.3 24.6,6.2 24.9,6.2C25.3,6.1 25.8,6.2 26,6.2C26.1,6.2 23.8,5.8 26,6.2C28.1,6.5 34.4,7.5 38.8,8.3C43.3,9 50.4,10.3 52.7,10.7" fill="none" style="stroke:var(--mk-ink)" stroke-width="2.20" stroke-linecap="round" stroke-linejoin="round"/><path d="M51.7,9.9C51.9,10 52.4,10.1 52.7,10.2C53,10.3 53.3,10.5 53.6,10.7C53.9,11 54.1,11.2 54.3,11.5C54.5,11.8 54.7,12.1 54.8,12.4C54.9,12.8 55,13.1 55,13.5C55.1,13.8 55.4,11.8 55,14.5C54.6,17.2 53.3,24.7 52.5,29.7C51.7,34.7 50.6,41.8 50.2,44.4C49.8,47.1 50.1,45.1 49.9,45.4C49.8,45.7 49.6,46 49.4,46.3C49.2,46.5 49,46.8 48.7,47C48.4,47.2 48.1,47.3 47.8,47.4C47.5,47.5 47.2,47.6 46.8,47.6C46.5,47.7 48.1,48 45.8,47.6C43.6,47.2 37.5,46 33.3,45.3C29,44.6 22.7,43.8 20.4,43.4C18.1,43.1 19.8,43.3 19.4,43.2C19.1,43 18.8,42.8 18.5,42.6C18.3,42.4 18,42.2 17.8,41.9C17.6,41.6 17.5,41.3 17.3,41C17.2,40.7 17.1,40.3 17.1,40C17.1,39.6 16.7,41.6 17.1,39C17.5,36.3 18.7,29.1 19.4,24.3C20,19.4 20.8,12.4 21.2,9.9C21.5,7.3 21.3,9.2 21.5,8.9C21.6,8.6 21.8,8.3 22,8C22.2,7.8 22.4,7.5 22.7,7.3C23,7.1 23.3,6.9 23.6,6.8C23.9,6.7 24.3,6.6 24.6,6.6C25,6.6 25.5,6.6 25.7,6.6C25.9,6.6 23.5,6.3 25.7,6.6C27.8,6.9 34.2,7.9 38.6,8.6C43.1,9.3 50.3,10.5 52.6,10.9" fill="none" style="stroke:var(--mk-ink)" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.32"/><path d="M11.8,18.8C14.4,18.6 22.1,18 27.3,17.6C32.5,17.2 40.1,16.5 42.8,16.3C45.6,16.1 43.6,16.3 44,16.4C44.4,16.4 44.8,16.6 45.1,16.7C45.5,16.9 45.8,17.1 46.1,17.4C46.4,17.6 46.7,17.9 46.9,18.2C47.1,18.5 47.3,18.9 47.4,19.3C47.6,19.6 47.4,17.6 47.7,20.4C47.9,23.1 48.4,30.6 48.8,35.8C49.1,40.9 49.5,48.5 49.7,51.3C49.8,54.1 49.7,52.1 49.6,52.5C49.5,52.8 49.4,53.2 49.2,53.6C49,53.9 48.8,54.3 48.5,54.6C48.2,54.9 47.9,55.1 47.6,55.3C47.3,55.6 46.9,55.7 46.5,55.9C46.2,56 48.2,55.9 45.4,56.1C42.5,56.3 34.8,56.9 29.6,57.2C24.4,57.6 16.9,58.2 14.1,58.3C11.3,58.5 13.3,58.4 13,58.3C12.6,58.2 12.2,58.1 11.8,57.9C11.5,57.8 11.2,57.5 10.9,57.3C10.6,57 10.3,56.7 10.1,56.4C9.9,56.1 9.7,55.7 9.6,55.4C9.5,55 9.6,57 9.3,54.2C9.1,51.5 8.7,44.1 8.4,39C8,33.9 7.5,26.4 7.4,23.7C7.2,20.9 7.4,22.9 7.4,22.5C7.5,22.1 7.6,21.7 7.8,21.4C8,21 8.2,20.7 8.5,20.4C8.7,20.1 9,19.9 9.3,19.6C9.7,19.4 10,19.2 10.4,19.1C10.8,19 11.3,18.9 11.5,18.9C11.8,18.8 9.2,19 11.8,18.8Z" style="fill:var(--mk-paper)"/><path d="M10.9,18.8C13.5,18.7 21.6,18.1 26.9,17.8C32.2,17.4 40.1,16.9 42.9,16.7C45.7,16.5 43.6,16.7 43.9,16.8C44.3,16.8 44.6,17 44.9,17.1C45.2,17.3 45.5,17.5 45.8,17.7C46.1,17.9 46.3,18.2 46.5,18.5C46.7,18.8 46.9,19.1 47,19.4C47.1,19.7 47.1,19.9 47.2,20.4C47.2,20.9 47.3,21.9 47.3,22.4C47.3,22.9 47.3,23.1 47.3,23.5C47.2,23.8 47.1,24.2 46.9,24.5C46.8,24.8 46.6,25.1 46.4,25.3C46.1,25.6 45.9,25.8 45.6,26C45.3,26.2 45,26.4 44.6,26.5C44.3,26.6 46.4,26.5 43.6,26.7C40.8,26.9 33,27.4 27.8,27.8C22.5,28.1 14.8,28.7 12,28.8C9.2,29 11.3,28.8 11,28.8C10.6,28.7 10.3,28.6 10,28.4C9.7,28.3 9.4,28.1 9.1,27.8C8.9,27.6 8.6,27.4 8.5,27.1C8.3,26.8 8.1,26.5 8,26.1C7.9,25.8 7.9,25.6 7.8,25.1C7.7,24.6 7.7,23.6 7.7,23.1C7.7,22.6 7.7,22.4 7.7,22.1C7.8,21.7 7.9,21.4 8.1,21.1C8.2,20.8 8.4,20.5 8.7,20.2C8.9,19.9 9.2,19.7 9.4,19.5C9.7,19.3 10.1,19.1 10.4,19C10.7,18.9 11.3,18.9 11.4,18.8C11.5,18.8 8.3,19 10.9,18.8Z" style="fill:var(--mk-brand)"/><path d="M13.4,27.8C14.3,27.8 17.1,27.6 18.9,27.5C20.8,27.3 22.7,27.2 24.5,27.1C26.4,27 28.3,26.9 30.1,26.8C32,26.7 33.8,26.6 35.7,26.5C37.6,26.4 39.4,26.3 41.3,26.1C43.1,26 52.4,25.4 46.8,25.7C41.2,26.1 12.5,27.9 7.8,28.2C3.2,28.4 17.1,27.4 18.9,27.3" fill="none" style="stroke:var(--mk-ink)" stroke-width="1.80" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.7,27.9C14.6,27.8 17.3,27.6 19.2,27.5C21,27.4 22.8,27.3 24.6,27.2C26.4,27.1 28.1,27 29.9,26.8C31.7,26.7 33.5,26.6 35.3,26.5C37.2,26.4 39,26.3 40.8,26.1C42.7,26 51.9,25.3 46.4,25.7C40.9,26.1 12.4,28.2 7.8,28.6C3.3,29 17.3,28.2 19.2,28.1" fill="none" style="stroke:var(--mk-ink)" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.32"/><path d="M44.1,16.2C44.3,16.3 44.8,16.6 45.1,16.9C45.4,17.1 45.7,17.4 45.9,17.7C46.1,18.1 46.3,18.4 46.4,18.8C46.5,19.2 46.4,17.2 46.6,20C46.8,22.8 47.3,30.4 47.6,35.6C48,40.8 48.6,48.3 48.8,51C49,53.8 48.8,51.8 48.8,52.2C48.7,52.5 48.6,52.9 48.4,53.3C48.3,53.6 48,53.9 47.8,54.2C47.6,54.5 47.3,54.8 46.9,55C46.6,55.2 46.3,55.4 45.9,55.5C45.6,55.6 47.5,55.5 44.8,55.7C42,55.9 34.5,56.4 29.4,56.8C24.2,57.2 16.6,57.9 13.8,58.1C11,58.3 13,58.1 12.6,58C12.2,58 11.8,57.8 11.5,57.7C11.1,57.5 10.8,57.3 10.5,57C10.2,56.8 10,56.5 9.7,56.1C9.5,55.8 9.3,55.5 9.2,55.1C9.1,54.7 9.2,56.7 9,53.9C8.8,51.1 8.3,43.5 7.9,38.3C7.6,33.1 7.1,25.6 6.9,22.8C6.8,20 6.9,22 7,21.6C7.1,21.2 7.2,20.8 7.4,20.5C7.6,20.1 7.8,19.8 8.1,19.5C8.3,19.2 8.7,18.9 9,18.7C9.3,18.5 9.7,18.3 10.1,18.2C10.4,18 11,18 11.2,17.9C11.4,17.9 8.6,18.1 11.2,17.9C13.8,17.7 21.6,17.2 26.7,16.8C31.9,16.4 39.3,15.8 42.1,15.7C44.8,15.5 42.7,15.6 43.3,15.7C43.8,15.9 45,16.6 45.3,16.8" fill="none" style="stroke:var(--mk-ink)" stroke-width="2.50" stroke-linecap="round" stroke-linejoin="round"/><path d="M44.5,16.2C44.7,16.3 45.2,16.6 45.5,16.9C45.8,17.1 46.1,17.5 46.3,17.8C46.5,18.1 46.7,18.5 46.8,18.8C47,19.2 46.8,17.2 47.1,20C47.3,22.9 48,30.8 48.4,36C48.7,41.2 49.1,48.6 49.2,51.4C49.3,54.1 49.1,52.2 49,52.5C48.9,52.9 48.8,53.3 48.6,53.6C48.4,54 48.2,54.3 47.9,54.6C47.6,54.9 47.3,55.1 47,55.3C46.6,55.5 46.2,55.7 45.8,55.8C45.5,55.9 47.4,55.8 44.6,56C41.8,56.2 34.1,56.7 29,57C23.8,57.4 16.4,58 13.7,58.2C10.9,58.4 12.9,58.2 12.5,58.2C12.1,58.1 11.8,58 11.4,57.8C11.1,57.6 10.7,57.4 10.4,57.1C10.1,56.9 9.9,56.6 9.7,56.3C9.4,55.9 9.3,55.6 9.1,55.2C9,54.8 9.1,56.8 8.9,54.1C8.7,51.3 8.2,43.9 7.9,38.7C7.6,33.5 7.1,25.8 7,23C6.8,20.2 7,22.2 7.1,21.8C7.2,21.4 7.3,21 7.5,20.6C7.7,20.3 7.9,19.9 8.1,19.6C8.4,19.3 8.7,19 9.1,18.8C9.4,18.5 9.8,18.3 10.1,18.2C10.5,18 11.1,17.9 11.3,17.9C11.5,17.8 8.7,18.1 11.3,17.9C13.9,17.7 21.7,17 26.8,16.7C31.9,16.4 39.2,16.2 41.9,16.1C44.6,16 42.6,16 43.1,16.2C43.6,16.4 44.8,17 45.2,17.2" fill="none" style="stroke:var(--mk-ink)" stroke-width="1.88" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.32"/><path d="M15.3,35.3C16.3,36.1 21.5,38.3 21.6,40C21.6,41.7 16.8,44.7 15.9,45.6" fill="none" style="stroke:var(--mk-ink)" stroke-width="2.60" stroke-linecap="round" stroke-linejoin="round"/><path d="M15.3,35.5C16.4,36.3 21.7,38.5 21.9,40.2C22.1,41.9 17.3,44.8 16.4,45.7" fill="none" style="stroke:var(--mk-ink)" stroke-width="1.95" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.32"/><path d="M24.9,45.7C25.3,45.7 26.5,45.6 27.2,45.5C28,45.4 28.8,45.4 29.5,45.3C30.3,45.2 31.1,45.1 31.9,45.1C32.6,45 33.8,44.9 34.1,44.9" fill="none" style="stroke:var(--mk-brand)" stroke-width="2.80" stroke-linecap="round" stroke-linejoin="round"/><path d="M25.3,45.5C25.6,45.5 26.7,45.4 27.5,45.4C28.2,45.3 28.9,45.3 29.6,45.3C30.3,45.3 31,45.3 31.7,45.2C32.5,45.2 33.6,45.1 33.9,45.1" fill="none" style="stroke:var(--mk-brand)" stroke-width="2.10" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.32"/><path d="M43.2,10.4C43.1,10.8 42.8,12.1 42.6,12.9C42.4,13.8 42.2,14.6 42,15.4C41.8,16.3 41.6,17.1 41.3,18C41.1,18.8 40.8,20 40.7,20.5C40.6,21.1 40.6,21 40.6,21.3C40.7,21.5 40.7,21.7 40.8,22C40.9,22.2 41,22.4 41.2,22.6C41.4,22.8 41.5,23 41.8,23.1C42,23.2 42.2,23.3 42.4,23.4C42.7,23.4 42.9,23.5 43.2,23.5C43.4,23.4 43.7,23.4 43.9,23.3C44.1,23.2 44.4,23.1 44.5,22.9C44.7,22.7 44.9,22.6 45,22.3C45.2,22.1 45.2,22.2 45.3,21.7C45.5,21.1 45.7,20 45.9,19.2C46.1,18.4 46.3,17.6 46.5,16.7C46.7,15.9 47,15.1 47.2,14.3C47.4,13.5 47.6,12.6 47.8,11.8C48,11 48.2,10.2 48.4,9.4C48.6,8.5 48.9,7.5 49,6.9C49.1,6.3 49.1,6.2 49.1,5.8C49.1,5.4 49,5.1 48.8,4.7C48.7,4.4 48.5,4 48.3,3.8C48,3.5 47.7,3.2 47.4,3C47.1,2.8 46.8,2.7 46.4,2.6C46,2.5 45.7,2.5 45.3,2.5C44.9,2.5 44.5,2.6 44.2,2.7C43.9,2.9 43.5,3.1 43.2,3.3C43,3.6 42.7,3.8 42.5,4.2C42.3,4.5 42.3,4.6 42.1,5.2C41.9,5.8 41.6,6.9 41.4,7.8C41.2,8.7 41,9.6 40.8,10.5C40.5,11.3 40.3,12.2 40.1,13.1C39.9,14 39.7,14.8 39.5,15.7C39.2,16.6 39,17.5 38.8,18.4C38.6,19.2 38.4,20.1 38.1,21C37.9,21.9 37.6,23 37.5,23.6C37.4,24.3 37.3,24.5 37.3,25C37.4,25.4 37.5,25.9 37.6,26.3C37.7,26.7 38,27.1 38.2,27.5C38.5,27.9 38.8,28.2 39.1,28.5C39.5,28.8 39.9,29 40.3,29.2C40.7,29.3 41.2,29.5 41.6,29.5C42.1,29.5 42.5,29.5 43,29.4C43.4,29.4 43.8,29.2 44.2,29C44.6,28.8 45,28.5 45.3,28.2C45.7,27.9 46,27.6 46.2,27.2C46.4,26.8 46.5,26.6 46.7,25.9C46.9,25.3 47.1,24.2 47.4,23.3C47.6,22.4 47.8,21.6 48,20.7C48.2,19.8 48.4,19 48.7,18.1C48.9,17.2 49.1,16.3 49.3,15.5C49.5,14.6 49.7,13.7 50,12.9C50.2,12 50.5,10.7 50.6,10.3" fill="none" style="stroke:var(--mk-paper)" stroke-width="4.60" stroke-linecap="round" stroke-linejoin="round"/><path d="M43.3,10.4C43.2,10.8 42.9,12.1 42.7,12.9C42.5,13.8 42.3,14.6 42.1,15.4C41.8,16.3 41.6,17.1 41.4,17.9C41.2,18.8 40.9,19.9 40.8,20.4C40.6,21 40.7,20.9 40.7,21.2C40.7,21.4 40.8,21.6 40.9,21.9C40.9,22.1 41.1,22.3 41.2,22.5C41.4,22.7 41.6,22.8 41.8,23C42,23.1 42.2,23.2 42.5,23.2C42.7,23.3 43,23.3 43.2,23.3C43.4,23.3 43.7,23.2 43.9,23.1C44.1,23 44.4,22.9 44.6,22.7C44.7,22.6 44.9,22.4 45,22.2C45.2,21.9 45.2,22 45.3,21.5C45.5,20.9 45.7,19.8 45.9,19C46.1,18.1 46.3,17.3 46.5,16.5C46.7,15.7 46.9,14.9 47.1,14.1C47.3,13.2 47.6,12.4 47.8,11.6C48,10.8 48.2,10 48.4,9.2C48.6,8.4 48.9,7.4 49,6.8C49.1,6.2 49.1,6.1 49.1,5.7C49.1,5.4 49,5 48.9,4.7C48.7,4.3 48.5,4 48.3,3.7C48.1,3.5 47.8,3.2 47.5,3C47.2,2.9 46.8,2.7 46.4,2.6C46.1,2.6 45.7,2.5 45.3,2.6C45,2.6 44.6,2.7 44.3,2.8C43.9,3 43.6,3.2 43.3,3.4C43,3.7 42.8,4 42.6,4.3C42.4,4.6 42.3,4.7 42.1,5.3C42,6 41.7,7.1 41.5,8C41.3,8.9 41.1,9.7 40.8,10.6C40.6,11.5 40.4,12.4 40.2,13.2C40,14.1 39.8,15 39.6,15.9C39.4,16.8 39.1,17.6 38.9,18.5C38.7,19.4 38.5,20.3 38.3,21.1C38.1,22 37.8,23.1 37.7,23.8C37.6,24.4 37.5,24.7 37.6,25.1C37.6,25.5 37.7,26 37.8,26.4C38,26.9 38.2,27.3 38.4,27.6C38.7,28 39,28.3 39.4,28.6C39.7,28.9 40.1,29.1 40.5,29.3C41,29.5 41.4,29.6 41.9,29.6C42.3,29.7 42.8,29.7 43.2,29.6C43.6,29.5 44.1,29.3 44.5,29.1C44.9,28.9 45.3,28.7 45.6,28.4C45.9,28.1 46.2,27.7 46.4,27.3C46.6,26.9 46.7,26.7 46.9,26.1C47.1,25.4 47.3,24.3 47.5,23.4C47.7,22.6 47.9,21.7 48.2,20.8C48.4,20 48.6,19.1 48.8,18.2C49,17.4 49.2,16.5 49.4,15.6C49.6,14.7 49.8,13.9 50,13C50.3,12.1 50.6,10.8 50.7,10.4" fill="none" style="stroke:var(--mk-ink)" stroke-width="2.00" stroke-linecap="round" stroke-linejoin="round"/><path d="M43,10C42.9,10.4 42.5,11.7 42.3,12.5C42.1,13.4 41.9,14.2 41.7,15.1C41.5,15.9 41.3,16.8 41.1,17.6C40.9,18.5 40.6,19.6 40.5,20.2C40.4,20.7 40.5,20.6 40.5,20.9C40.5,21.1 40.6,21.4 40.6,21.6C40.7,21.8 40.9,22.1 41,22.3C41.2,22.4 41.4,22.6 41.6,22.7C41.8,22.9 42.1,23 42.3,23C42.5,23.1 42.8,23.1 43.1,23.1C43.3,23.1 43.6,23 43.8,22.9C44,22.8 44.2,22.7 44.4,22.6C44.6,22.4 44.8,22.2 44.9,22C45.1,21.8 45.1,21.8 45.2,21.3C45.4,20.8 45.7,19.7 45.9,18.9C46.1,18 46.3,17.2 46.5,16.4C46.7,15.6 46.9,14.8 47.1,13.9C47.3,13.1 47.5,12.3 47.7,11.5C47.9,10.7 48.1,9.9 48.3,9.1C48.5,8.3 48.8,7.3 48.9,6.7C49,6.1 49,6 49,5.6C49,5.3 48.9,4.9 48.8,4.6C48.6,4.2 48.4,3.9 48.2,3.6C47.9,3.4 47.6,3.1 47.3,2.9C47,2.8 46.7,2.6 46.3,2.5C45.9,2.5 45.6,2.4 45.2,2.5C44.8,2.5 44.4,2.6 44.1,2.7C43.8,2.9 43.4,3.1 43.1,3.3C42.9,3.6 42.6,3.9 42.4,4.2C42.2,4.5 42.1,4.6 42,5.2C41.8,5.9 41.5,7 41.3,7.9C41.1,8.8 40.9,9.6 40.6,10.5C40.4,11.4 40.2,12.3 40,13.2C39.7,14.1 39.5,15 39.3,15.9C39,16.8 38.8,17.7 38.6,18.5C38.3,19.4 38.1,20.3 37.9,21.2C37.6,22.1 37.3,23.2 37.2,23.9C37,24.6 37,24.8 37,25.3C37,25.7 37.1,26.2 37.3,26.6C37.4,27 37.6,27.5 37.9,27.8C38.1,28.2 38.4,28.6 38.8,28.8C39.1,29.1 39.5,29.4 39.9,29.5C40.4,29.7 40.8,29.8 41.2,29.8C41.7,29.9 42.2,29.9 42.6,29.8C43,29.7 43.5,29.5 43.9,29.3C44.3,29.1 44.7,28.9 45,28.5C45.3,28.2 45.6,27.9 45.8,27.5C46,27.1 46.1,26.8 46.3,26.2C46.5,25.5 46.8,24.4 47,23.5C47.2,22.6 47.4,21.7 47.6,20.8C47.8,19.9 48,19 48.3,18.1C48.5,17.2 48.7,16.4 48.9,15.5C49.1,14.6 49.3,13.7 49.5,12.8C49.8,11.9 50.1,10.6 50.2,10.2" fill="none" style="stroke:var(--mk-ink)" stroke-width="1.50" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.32"/></symbol>
+<!-- MARK_END -->
+</svg>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="CLIppet home">
+      <svg class="mk" viewBox="0 0 64 64" aria-hidden="true"><use href="#mark"/></svg>
+      CLIppet
+    </a>
+    <nav class="nav-links" aria-label="Primary">
+      <a href="#how">How it works</a>
+      <a href="#accounts">Accounts</a>
+      <a href="#use-cases">Use cases</a>
+      <a href="#tui">Terminal UI</a>
+      <a href="#quick-start">Quick start</a>
+      <a href="#limitations">Limitations</a>
+    </nav>
+    <div class="nav-tools">
+      <button class="theme-toggle sk" type="button" aria-label="Ink theme" aria-pressed="false" title="Switch to the ink (dark) theme">
+        <svg class="i-moon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M16.5 12.2A6.8 6.8 0 0 1 7.8 3.5a6.8 6.8 0 1 0 8.7 8.7Z" stroke-linejoin="round"/></svg>
+        <svg class="i-sun" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="3.6"/><path d="M10 1.8v2M10 16.2v2M1.8 10h2M16.2 10h2M4.2 4.2l1.4 1.4M14.4 14.4l1.4 1.4M4.2 15.8l1.4-1.4M14.4 5.6l1.4-1.4" stroke-linecap="round"/></svg>
+      </button>
+      <a class="nav-gh sk" href="https://github.com/FanBB2333/CLIppet">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ================= HERO ================= -->
+<section class="hero">
+  <div class="dotted" aria-hidden="true"></div>
+  <div class="wrap">
+    <div class="hero-copy">
+      <a class="pill sk" href="#accounts"><span class="dot">6</span>Codex account formats, from Cockpit Tools to CLIProxyAPI <span class="arr" aria-hidden="true">→</span></a>
+      <h1><svg class="mk" viewBox="0 0 64 64" aria-hidden="true"><use href="#mark"/></svg><span class="word"><span class="w">CLI</span><span class="g">ppet</span></span></h1>
+      <p class="tagline">Run Claude Code, Codex, Gemini CLI and QoderCLI as whichever account you choose: interactively, headless, or side by side.</p>
+      <p class="lead">CLIppet gives every run its own identity. An env is a real HOME directory with its own login, sessions and history, so switching accounts means switching envs instead of logging out. Bring the Codex accounts you already keep in Cockpit Tools, sub2api or CLIProxyAPI, pass any flag through to the agent, and drive it all from the terminal, a TUI or Python.</p>
+      <div class="ctas">
+        <a class="btn btn-primary sk" href="#quick-start">Get started <span class="k" aria-hidden="true">→</span></a>
+        <a class="btn btn-ghost sk" href="https://github.com/FanBB2333/CLIppet">
+          <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+      <ul class="facts-row" aria-label="Project facts">
+        <li><a href="https://github.com/FanBB2333/CLIppet/blob/main/LICENSE"><svg class="fr-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20h10M6 6l6-1 6 1M12 3v17M9 12 6 6l-3 6a3 3 0 0 0 6 0M21 12l-3-6-3 6a3 3 0 0 0 6 0"/></svg><span class="fr-t"><b>MIT</b><small>License</small></span></a></li>
+        <li><span class="fr-c"><svg class="fr-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h3M12 15h7a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3M8 9V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-4M11 6v.01M13 18v.01"/></svg><span class="fr-t"><b>3.10+</b><small>Python</small></span></span></li>
+        <li><span class="fr-c"><svg class="fr-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 8.5h18M7 12.5l2.5 2-2.5 2M12 16.5h4"/></svg><span class="fr-t"><b>4 agent CLIs</b><small>Claude Code · Codex · Gemini · Qoder</small></span></span></li>
+      </ul>
+    </div>
+
+    <!-- storyboard: an animated walkthrough (a still frame without JS or with reduced motion) -->
+    <figure class="sb sk" id="story" aria-label="Walkthrough of launching Codex in an env">
+      <figcaption class="sr-only">Walkthrough: choose the env work, run clippet -e work codex resume --last, watch CLIppet pull work's newest login, point HOME at the env and hand the terminal to Codex, then send one prompt to three envs from the terminal UI and watch the three runs finish.</figcaption>
+      <button class="sb-ctl" type="button" aria-pressed="false" aria-label="Pause animation">
+        <svg class="i-pause" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="2.5" width="2.6" height="9" rx=".8"/><rect x="8.4" y="2.5" width="2.6" height="9" rx=".8"/></svg>
+        <svg class="i-play" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M4 2.6v8.8a.6.6 0 0 0 .9.5l7-4.4a.6.6 0 0 0 0-1L4.9 2.1a.6.6 0 0 0-.9.5Z"/></svg>
+      </button>
+      <div class="sb-canvas" aria-hidden="true">
+
+        <div class="scene s-head" data-s="head">
+          <div class="sb-mark"><svg class="mk" viewBox="0 0 64 64"><use href="#mark"/></svg>CLIppet</div>
+          <p class="sb-headline">Every agent CLI, <br class="br-d">as <em>whichever account</em> you choose.</p>
+        </div>
+
+        <div class="scene s-pick" data-s="pick">
+          <div class="pick">
+            <p class="pick-l">Choose an env</p>
+            <div class="pchips">
+              <div class="pchip sk"><i class="ag"></i><span class="pc-id">base</span><span class="pc-a">your own HOME</span></div>
+              <div class="pchip sk" data-id="work"><i class="ag codex"></i><span class="pc-id">work</span><span class="pc-a">alice@example.com</span><span class="pc-ck"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
+              <div class="pchip sk"><i class="ag codex"></i><span class="pc-id">personal</span><span class="pc-a">bob@example.com</span></div>
+              <div class="pchip sk"><i class="ag claude"></i><span class="pc-id">research</span><span class="pc-a">a Claude login</span></div>
+              <div class="pchip sk"><i class="ag codex"></i><span class="pc-id">client</span><span class="pc-a">Cockpit #3, linked</span></div>
+              <div class="pchip sk"><i class="ag"></i><span class="pc-id">scratch</span><span class="pc-a">no login yet</span></div>
+            </div>
+            <div class="prompt sk">
+              <div class="prompt-in"><span class="typed"></span><span class="caret"></span></div>
+              <div class="prompt-f">
+                <span class="pf-file"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1.8 4.2h4.4l1.4 1.6h6.6v7.4H1.8z" stroke-linejoin="round"/></svg>~/.clippet/envs/work</span>
+                <span class="go sk">Launch <span aria-hidden="true">→</span></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scene s-shim" data-s="shim">
+          <div class="shim-row"><span class="spin">✻</span><p class="shim">Opening work's HOME…</p></div>
+        </div>
+
+        <div class="scene s-prog keep" data-s="prog">
+          <div class="pcard sk">
+            <div class="pcard-h"><span>Launch</span><code>clippet -e work codex resume --last</code></div>
+            <ol class="steps">
+              <li class="si done"><span class="si-m"><b>1</b><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="si-t">Pull work's newest login from Cockpit Tools</span></li>
+              <li class="si done"><span class="si-m"><b>2</b><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="si-t">Point <code>$HOME</code> at <code>~/.clippet/envs/work</code></span></li>
+              <li class="si done"><span class="si-m"><b>3</b><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="si-t">Drop <code>CODEX_HOME</code> and <code>OPENAI_API_KEY</code> from your shell</span></li>
+              <li class="si done"><span class="si-m"><b>4</b><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="si-t">Hand the terminal to <code>codex resume --last</code></span></li>
+              <li class="si done"><span class="si-m"><b>5</b><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="si-t">Keep any login Codex refreshes inside work</span></li>
+            </ol>
+          </div>
+        </div>
+
+        <div class="scene s-result keep" data-s="result">
+          <div class="rcard sk">
+            <div class="rc-top"><span class="rc-file"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1.8 4.2h4.4l1.4 1.6h6.6v7.4H1.8z" stroke-linejoin="round"/></svg>~/.clippet/envs/work</span><span class="rc-tag" title="This run is an illustration with made-up accounts.">Example only</span></div>
+            <p class="rc-q">Who is Codex in <code>work</code>?</p>
+            <div class="tiles">
+              <div class="tile sk"><b>alice</b><span>the Codex account, plan plus</span></div>
+              <div class="tile sk"><b>resumed</b><span>work's last session</span></div>
+              <div class="tile sk"><b>untouched</b><span>your own ~/.codex</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scene s-line" data-s="line">
+          <p class="sb-headline">Or send one prompt <br class="br-d">to <em>several envs</em> at once.</p>
+        </div>
+
+        <div class="scene s-dev" data-s="dev">
+          <div class="dcard sk">
+            <div class="dc-h"><svg class="mk" viewBox="0 0 64 64"><use href="#mark"/></svg>clippet tui · Runs</div>
+            <div class="dc-flag">"fix the flaky test" → work, personal, client</div>
+            <ul class="drows">
+              <li class="drow"><code>#1</code><span class="dn">work</span><span>codex</span><span class="dt">38s · 12.4k tok</span><i class="st"></i></li>
+              <li class="drow"><code>#2</code><span class="dn">personal</span><span>codex</span><span class="dt">41s · 9.8k tok</span><i class="st"></i></li>
+              <li class="drow"><code>#3</code><span class="dn">client</span><span>codex</span><span class="dt">52s · 15.1k tok</span><i class="st"></i></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="scene s-close" data-s="close">
+          <p class="sb-headline">Switch accounts <br class="br-d">without <em>logging out</em>.</p>
+        </div>
+
+        <div class="scene s-end" data-s="end">
+          <div class="end-logo"><svg class="mk" viewBox="0 0 64 64"><use href="#mark"/></svg>CLIppet</div>
+          <p class="end-sub">One CLI to orchestrate them all</p>
+          <span class="sb-cta sk">Get started <span>→</span></span>
+        </div>
+
+        <div class="sb-cursor"><svg viewBox="0 0 24 24"><path class="c-fill" d="M3 2.2 3.2 19l4.4-4.3 2.9 6.6 2.8-1.2-2.9-6.5 6.2-.2Z" stroke-width="1.3" stroke-linejoin="round"/></svg><i></i></div>
+      </div>
+    </figure>
+
+    <div class="stage">
+      <!-- flow diagram -->
+      <div class="panel sk" role="figure" aria-label="What a launch goes through">
+        <div class="panel-h"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>what a launch goes through</span></div>
+        <div class="flow">
+          <div class="node sk flat">
+            <div class="node-t">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><path d="M2.5 7.5h15M6 11l2 1.5L6 14M10 14h4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Your command
+            </div>
+            <div class="node-s"><code class="inline-code">clippet -e work codex resume --last</code>: everything after <code class="inline-code">codex</code> is Codex's own</div>
+          </div>
+          <div class="link" aria-hidden="true"><svg viewBox="0 0 10 28"><path d="M5 0C6.4 9 3.8 18 5 28"/></svg></div>
+          <div class="node sk flat layer">
+            <div class="node-t">
+              <svg viewBox="0 0 64 64" aria-hidden="true"><use href="#mark"/></svg>
+              CLIppet
+            </div>
+            <div class="node-s">Finds the env, pulls its newest login, drops the variables that would point Codex elsewhere. Logins come from:</div>
+            <div class="chips">
+              <span class="chip">Cockpit Tools</span><span class="chip">sub2api</span><span class="chip">CLIProxyAPI</span><span class="chip">auth.json</span>
+            </div>
+          </div>
+          <div class="link" aria-hidden="true"><svg viewBox="0 0 10 28"><path d="M5 0C3.6 9 6.2 19 5 28"/></svg></div>
+          <div class="node sk flat">
+            <div class="node-t">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 9.5 10 3.5l7 6V16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z" stroke-linejoin="round"/><path d="M8 17v-5h4v5" stroke-linejoin="round"/></svg>
+              work's HOME
+            </div>
+            <div class="homes">
+              <div class="home"><b>.codex/auth.json</b><span>alice · plus</span></div>
+              <div class="home"><b>.codex/config.toml</b><span>copied from yours</span></div>
+              <div class="home"><b>.gitconfig</b><span>linked to yours</span></div>
+              <div class="home"><b>.codex/sessions/</b><span>work's own</span></div>
+            </div>
+          </div>
+          <div class="link" aria-hidden="true"><svg viewBox="0 0 10 28"><path d="M5 0C6 10 4.2 18 5 28"/></svg></div>
+          <div class="node sk flat">
+            <div class="node-t">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1.5"/><rect x="8" y="8" width="4" height="4" rx=".6"/><path d="M8 2.5V5M12 2.5V5M8 15v2.5M12 15v2.5M2.5 8H5M2.5 12H5M15 8h2.5M15 12h2.5" stroke-linecap="round"/></svg>
+              The agent, unchanged
+            </div>
+            <div class="ags"><span><i class="ag claude"></i>claude</span><span><i class="ag codex"></i>codex</span><span><i class="ag gemini"></i>gemini</span><span><i class="ag qoder"></i>qodercli</span></div>
+            <div class="node-s">The real CLI, running with <code class="inline-code">$HOME</code> set to the env.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- code window -->
+      <div class="panel sk" id="examples">
+        <div class="panel-h"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>examples</span></div>
+        <div class="tabs" role="tablist" aria-label="Code examples">
+          <button class="tab" role="tab" id="tab-env" aria-controls="p-env" aria-selected="true">Envs</button>
+          <button class="tab" role="tab" id="tab-acc" aria-controls="p-acc" aria-selected="false" tabindex="-1">Accounts</button>
+          <button class="tab" role="tab" id="tab-hl" aria-controls="p-hl" aria-selected="false" tabindex="-1">Headless</button>
+          <button class="tab" role="tab" id="tab-py" aria-controls="p-py" aria-selected="false" tabindex="-1">Python</button>
+        </div>
+
+        <div class="code-panel" id="p-env" role="tabpanel" aria-labelledby="tab-env">
+          <div class="cp-h"><p class="cp-cap"><b class="nojs-title">Envs. </b>An env is a HOME of its own: one login, its sessions, its history.</p><button class="copy" type="button">Copy</button></div>
+<pre><code><span class="t-p">$ </span>clippet env create work --from-current   <span class="t-c"># your config, none of your logins</span>
+<span class="t-p">$ </span>clippet -e work codex login              <span class="t-c"># log in once, inside the env</span>
+<span class="t-p">$ </span>clippet -e work codex                    <span class="t-c"># from now on, always this account</span>
+<span class="t-p">$ </span>clippet -e work codex resume --last      <span class="t-c"># the rest goes to Codex as is</span>
+
+<span class="t-c"># two envs, two accounts, at the same time</span>
+<span class="t-p">$ </span>clippet -e personal codex <span class="t-o">&amp;</span>  clippet -e work codex <span class="t-o">&amp;</span></code></pre>
+        </div>
+
+        <div class="code-panel" id="p-acc" role="tabpanel" aria-labelledby="tab-acc">
+          <div class="cp-h"><p class="cp-cap"><b class="nojs-title">Accounts. </b>Put a Codex account from another tool into an env.</p><button class="copy" type="button">Copy</button></div>
+<pre><code><span class="t-p">$ </span>clippet auth list cockpit                       <span class="t-c"># what Cockpit Tools holds</span>
+<span class="t-p">$ </span>clippet env import work cockpit --account <span class="t-n">2</span>     <span class="t-c"># linked to account #2</span>
+<span class="t-p">$ </span>clippet env import bob ./backup.json --account bob   <span class="t-c"># an export</span>
+<span class="t-p">$ </span>clippet -e work codex                           <span class="t-c"># Codex, logged in as #2</span>
+
+<span class="t-c"># or skip the env: a throw-away HOME for one run</span>
+<span class="t-p">$ </span>clippet -c sub2api-account.json codex</code></pre>
+        </div>
+
+        <div class="code-panel" id="p-hl" role="tabpanel" aria-labelledby="tab-hl">
+          <div class="cp-h"><p class="cp-cap"><b class="nojs-title">Headless. </b>Run once and print the answer.</p><button class="copy" type="button">Copy</button></div>
+<pre><code><span class="t-p">$ </span>clippet -e work codex -p <span class="t-s">"Explain the failing test"</span>
+
+<span class="t-c"># arguments after the prompt go to codex exec</span>
+<span class="t-p">$ </span>clippet -e work codex -p <span class="t-s">"Fix it"</span> -c model_reasoning_effort=high
+
+<span class="t-c"># a project's .clippet.json can pick the env for you</span>
+<span class="t-p">$ </span>clippet codex -p <span class="t-s">"Summarize the open TODOs"</span></code></pre>
+        </div>
+
+        <div class="code-panel" id="p-py" role="tabpanel" aria-labelledby="tab-py">
+          <div class="cp-h"><p class="cp-cap"><b class="nojs-title">Python. </b>The same envs, side by side, with structured results.</p><button class="copy" type="button">Copy</button></div>
+<pre><code><span class="t-k">from</span> clippet <span class="t-k">import</span> ClippetRunner, AgentRequest, get_environment
+<span class="t-k">from</span> clippet.config.detector <span class="t-k">import</span> create_adapter_with_second_home
+
+runner = <span class="t-f">ClippetRunner</span>(max_workers=<span class="t-n">2</span>)
+<span class="t-k">for</span> env <span class="t-k">in</span> (<span class="t-s">"work"</span>, <span class="t-s">"personal"</span>):            <span class="t-c"># two envs, two accounts</span>
+    home = <span class="t-f">get_environment</span>(env)[<span class="t-s">"home_dir"</span>]
+    runner.<span class="t-f">register</span>(env, <span class="t-f">create_adapter_with_second_home</span>(home, <span class="t-s">"codex"</span>))
+
+request = <span class="t-f">AgentRequest</span>(task_prompt=<span class="t-s">"Fix the flaky test"</span>, workspace_dir=<span class="t-s">"."</span>)
+results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"work"</span>: request, <span class="t-s">"personal"</span>: request})
+<span class="t-c"># each AgentResult: output_text, tool_calls, usage, session_id</span></code></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="facts sk">
+      <div class="fact"><div class="fact-n">4</div><div class="fact-l">agent CLIs: Claude Code, Codex, Gemini CLI, QoderCLI</div></div>
+      <div class="fact"><div class="fact-n">6</div><div class="fact-l">Codex account formats it can read</div></div>
+      <div class="fact"><div class="fact-n">1</div><div class="fact-l">HOME per env, with its own login</div></div>
+      <div class="fact"><div class="fact-n">5</div><div class="fact-l">places in the terminal UI</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= HOW ================= -->
+<section class="sec" id="how">
+  <div class="wrap">
+    <span class="eyebrow">How it works</span>
+    <h2>There are three ways to run an agent. <span class="dim">Each one picks who the agent is first.</span></h2>
+    <div class="ways">
+      <article class="card way sk">
+        <span class="way-n">01</span>
+        <div class="ico sk flat"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><path d="M6 8l2.5 2L6 12M10.5 12.5h3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>Interactive</h3>
+        <p>Hands your terminal to the agent inside the env's HOME. Everything after the agent name goes to the agent unchanged, so its own subcommands and flags keep working.</p>
+        <div class="entry"><div class="entry-l">Entry point</div>
+<pre><code>clippet -e work codex resume --last</code></pre></div>
+      </article>
+      <article class="card way sk">
+        <span class="way-n">02</span>
+        <div class="ico sk flat"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 5h12M4 9h8M4 13h10M4 17h6" stroke-linecap="round"/></svg></div>
+        <h3>Headless</h3>
+        <p>Runs the agent once with <code>-p</code> and prints its final answer. Arguments after the prompt go to the agent's own headless command, such as <code>codex exec</code>.</p>
+        <div class="entry"><div class="entry-l">Entry point</div>
+<pre><code>clippet -e work codex -p <span class="t-s">"Fix it"</span></code></pre></div>
+      </article>
+      <article class="card way sk">
+        <span class="way-n">03</span>
+        <div class="ico sk flat"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 6 3 10l4 4M13 6l4 4-4 4" stroke-linecap="round" stroke-linejoin="round"/><path d="m11 4-2 12" stroke-linecap="round"/></svg></div>
+        <h3>From Python</h3>
+        <p>One <code>run()</code> for every CLI, structured results back: the answer, tool calls, usage and session id. <code>ClippetRunner</code> runs several side by side, and <code>run_async</code> streams each line as it comes.</p>
+        <div class="entry"><div class="entry-l">Entry point</div>
+<pre><code>runner.<span class="t-f">execute_parallel</span>(
+    {<span class="t-s">"work"</span>: req, <span class="t-s">"personal"</span>: req})</code></pre></div>
+      </article>
+    </div>
+    <p class="footnote"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M8 7.2V11M8 5h.01" stroke-linecap="round"/></svg><span>No env? Point <code>-c</code> at a credential file for a throw-away HOME, or pick <code>base</code> to run in your own.</span></p>
+  </div>
+</section>
+
+<!-- ================= ACCOUNTS ================= -->
+<section class="sec" id="accounts">
+  <div class="wrap">
+    <span class="eyebrow">Codex accounts</span>
+    <h2>Bring the accounts you already have, <span class="dim">wherever you keep them.</span></h2>
+    <p class="sec-lead">CLIppet reads Codex logins from the tools people use to manage them, turns each into Codex's own <code>auth.json</code>, and puts it in an env or a throw-away HOME. Pick one with <code>--account</code>: an index, an e-mail, a label or an account id.</p>
+    <div class="fmts">
+      <article class="card fmt live sk">
+        <span class="tag">linked</span>
+        <h3>Cockpit Tools store</h3>
+        <code class="how">cockpit</code>
+        <p>The live, encrypted account store, read only. An env linked to one of its accounts pulls the newest login before every launch.</p>
+      </article>
+      <article class="card fmt sk">
+        <h3>Cockpit Tools export</h3>
+        <code class="how">cockpit_auto_backup_*.json</code>
+        <p>Backups and data-transfer files. Only the Codex accounts in them are read.</p>
+      </article>
+      <article class="card fmt sk">
+        <h3>sub2api export</h3>
+        <code class="how">sub2api-account-*.json</code>
+        <p>Accounts with <code>platform: openai</code>. Claude and Gemini entries are left alone.</p>
+      </article>
+      <article class="card fmt sk">
+        <h3>CLIProxyAPI</h3>
+        <code class="how">codex-*.json</code>
+        <p>The Codex token files CLIProxyAPI keeps, one account in each.</p>
+      </article>
+      <article class="card fmt sk">
+        <h3>Codex auth.json</h3>
+        <code class="how">~/.codex/auth.json</code>
+        <p>A ChatGPT login or an API key, passed through as it is. A HOME or <code>CODEX_HOME</code> folder works too.</p>
+      </article>
+      <article class="card fmt sk">
+        <h3>Token bundle</h3>
+        <code class="how">{"id_token", "access_token", "refresh_token"}</code>
+        <p>Bare tokens, also nested under <code>tokens</code> or <code>credentials</code>. The access token must be an OpenAI JWT.</p>
+      </article>
+    </div>
+    <figure class="art">
+      <img src="../resources/accounts.svg" width="1200" height="600" loading="lazy" alt="Codex accounts from Cockpit Tools, a Cockpit export, sub2api, CLIProxyAPI or auth.json are imported into the env acct-a with clippet env import; the env then launches Codex logged in as that account.">
+    </figure>
+    <ul class="notes">
+      <li>Logins are not copied between envs. OAuth refresh tokens rotate, so the first copy that refreshes would break the others.</li>
+      <li>A linked env leaves refreshing to the account manager; <code>clippet env sync</code> pulls the newest login on demand.</li>
+      <li>When Codex refreshes a login during a run, CLIppet writes it back to its <code>auth.json</code>, or keeps it under <code>~/.clippet/refreshed/</code>.</li>
+      <li>Accounts that need a new login, ChatGPT web-session tokens and non-OpenAI tokens are flagged or skipped.</li>
+    </ul>
+    <div class="allcmds"><a class="arrow-link" href="https://github.com/FanBB2333/CLIppet#32-importing-codex-accounts-from-other-tools">Every source and option is in the README <span aria-hidden="true">→</span></a></div>
+  </div>
+</section>
+
+<!-- ================= USE CASES ================= -->
+<section class="sec" id="use-cases">
+  <div class="wrap">
+    <span class="eyebrow">Use cases</span>
+    <h2>Things you can do <span class="dim">without logging out.</span></h2>
+    <div class="bento">
+      <article class="card uc s4 sk">
+        <span class="num">01</span>
+        <h3>Keep work and personal agents apart</h3>
+        <p>Each env keeps its own login, sessions, MCP state and history. Two envs can run at once, as two different accounts.</p>
+        <div class="snip"><pre><code><span class="t-p">$ </span>clippet -e personal codex <span class="t-o">&amp;</span>  clippet -e work codex <span class="t-o">&amp;</span></code></pre></div>
+        <div class="cmds"><span class="cmd">env create</span><span class="cmd">-e work</span></div>
+      </article>
+      <article class="card uc s2 sk">
+        <span class="num">02</span>
+        <h3>Use the accounts in Cockpit Tools</h3>
+        <p>List its Codex accounts and link an env to one of them.</p>
+        <div class="cmds"><span class="cmd">auth list cockpit</span><span class="cmd">env import</span></div>
+      </article>
+      <article class="card uc s2 sk">
+        <span class="num">03</span>
+        <h3>Pin an env to a project</h3>
+        <p>A <code>.clippet.json</code> holds only references, so plain <code>clippet codex</code> picks the right account there.</p>
+        <div class="cmds"><span class="cmd">.clippet.json</span></div>
+      </article>
+      <article class="card uc s2 sk">
+        <span class="num">04</span>
+        <h3>Ask several accounts at once</h3>
+        <p>Mark envs in the TUI, send one prompt, and watch every run stream in.</p>
+        <div class="cmds"><span class="cmd">clippet tui</span><span class="cmd">Space</span><span class="cmd">i</span></div>
+      </article>
+      <article class="card uc s2 wide-t sk">
+        <span class="num">05</span>
+        <h3>Keep every agent flag</h3>
+        <p>Subcommands and options after the agent name reach the agent unchanged.</p>
+        <div class="cmds"><span class="cmd">resume --last</span><span class="cmd">login</span><span class="cmd">-c key=value</span></div>
+      </article>
+      <article class="card uc s3 sk">
+        <span class="num">06</span>
+        <h3>Script agents from Python</h3>
+        <p>Run any of the four CLIs with one interface, and watch Codex's events as they arrive.</p>
+        <div class="cmds"><span class="cmd">run()</span><span class="cmd">run_async(on_output=…)</span><span class="cmd">execute_parallel</span></div>
+      </article>
+      <article class="card uc s3 sk">
+        <span class="num">07</span>
+        <h3>Pick up where an env left off</h3>
+        <p>The TUI lists each env's recent Codex sessions and resumes one in its own folder.</p>
+        <div class="cmds"><span class="cmd">r</span><span class="cmd">s</span><span class="cmd">codex resume</span></div>
+      </article>
+      <article class="card uc s2 sk">
+        <span class="num">08</span>
+        <h3>Use a gateway key</h3>
+        <p>Point Codex at sub2api or another OpenAI-compatible gateway with its own key and config.</p>
+        <div class="cmds"><span class="cmd">--codex-config</span></div>
+      </article>
+      <article class="card uc s4 sk">
+        <span class="num">09</span>
+        <h3>See who an agent will be</h3>
+        <p><code>env status</code> shows the account, plan, token expiry and source. The TUI's Checks place lists the agent versions and the variables isolation drops.</p>
+        <div class="cmds"><span class="cmd">env list</span><span class="cmd">env status</span><span class="cmd">Checks</span></div>
+      </article>
+    </div>
+    <div class="allcmds">
+      <span>Run <code>clippet --help</code> or <code>clippet env --help</code> for every command.</span>
+      <a class="arrow-link" href="https://github.com/FanBB2333/CLIppet#3-accounts--environments">Accounts and environments <span aria-hidden="true">→</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= TUI ================= -->
+<section class="sec" id="tui">
+  <div class="wrap">
+    <span class="eyebrow">Terminal UI</span>
+    <h2>A terminal UI <span class="dim">on the same paper.</span></h2>
+    <p class="sec-lead">Plain <code>clippet</code> in a terminal opens it: your envs and their accounts, recent Codex sessions, streamed runs, project pins and checks. <code>T</code> switches between ink and paper, <code>?</code> lists every key.</p>
+    <div class="tui">
+      <div class="panel shots sk">
+        <div class="tabs" role="tablist" aria-label="Terminal UI screenshots">
+          <button class="tab" role="tab" id="tab-shot-envs" aria-controls="p-shot-envs" aria-selected="true">Envs</button>
+          <button class="tab" role="tab" id="tab-shot-runs" aria-controls="p-shot-runs" aria-selected="false" tabindex="-1">Runs</button>
+        </div>
+        <div class="shot" id="p-shot-envs" role="tabpanel" aria-labelledby="tab-shot-envs">
+          <img src="../resources/tui-envs.svg" width="1990" height="1042" loading="lazy" alt="The Envs place of clippet tui: a list of envs with their Codex accounts, plans and token lifetimes, and the selected env's details.">
+          <p>Envs: every env with its Codex account, plan and token lifetime.</p>
+        </div>
+        <div class="shot" id="p-shot-runs" role="tabpanel" aria-labelledby="tab-shot-runs">
+          <img src="../resources/tui-runs.svg" width="1990" height="1042" loading="lazy" alt="The Runs place of clippet tui: one prompt streamed in two envs, each with its steps and answer.">
+          <p>Runs: one prompt streamed in two envs.</p>
+        </div>
+      </div>
+      <ul class="places">
+        <li class="place card sk"><div class="place-h"><b>1</b><h3>Envs</h3></div><p>Each env's Codex account, plan, token lifetime, linked source and recent sessions.</p><div class="keys"><span><kbd>Enter</kbd> launch</span><span><kbd>r</kbd> resume</span><span><kbd>n</kbd> new</span><span><kbd>a</kbd> import</span></div></li>
+        <li class="place card sk"><div class="place-h"><b>2</b><h3>Accounts</h3></div><p>Every account in Cockpit Tools and in the files you add, and which env holds it.</p><div class="keys"><span><kbd>Enter</kbd> into an env</span><span><kbd>x</kbd> export</span><span><kbd>+</kbd> add a file</span></div></li>
+        <li class="place card sk"><div class="place-h"><b>3</b><h3>Runs</h3></div><p>Prompts you sent, streamed: commands, edits, the answer, tokens.</p><div class="keys"><span><kbd>c</kbd> continue</span><span><kbd>R</kbd> again</span><span><kbd>k</kbd> stop</span></div></li>
+        <li class="place card sk"><div class="place-h"><b>4</b><h3>Project</h3></div><p>The workspace's <code>.clippet.json</code> and what each agent resolves to.</p><div class="keys"><span><kbd>p</kbd> pin an env</span><span><kbd>e</kbd> edit</span></div></li>
+        <li class="place card sk"><div class="place-h"><b>5</b><h3>Checks</h3></div><p>Agent CLIs and versions, CLIppet's paths, and the variables isolation drops.</p><div class="keys"><span><kbd>Ctrl+R</kbd> check again</span></div></li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ================= ARCHITECTURE ================= -->
+<section class="sec" id="architecture">
+  <div class="wrap">
+    <span class="eyebrow">Under the hood</span>
+    <h2>A run goes down, <span class="dim">its result comes back up.</span></h2>
+    <p class="sec-lead">Five parts, one question each: where the run starts, who it runs as, where that login comes from, how CLIppet talks to the agent, and where the agent runs.</p>
+    <figure class="art">
+      <img src="../resources/architecture.svg" width="1200" height="1290" loading="lazy" alt="CLIppet's architecture: the CLI, the TUI and the Python SDK pick an identity through config/ (Codex accounts come from auth/); an adapter turns the request into the agent's command; isolation.py runs the agent CLI in a sandbox HOME; parsers turn its output into an AgentResult.">
+    </figure>
+    <div class="layers">
+      <div class="ly start sk flat"><h3>Entry points</h3><code class="mod">cli.py · tui/ · orchestrator.py</code><p>The CLI, the TUI and the Python SDK drive the same layers.</p></div>
+      <div class="ly identity sk flat"><h3>Identity</h3><code class="mod">config/</code><p>An env, a credential file or a <code>.clippet.json</code> pin decides the HOME and the login.</p></div>
+      <div class="ly accounts sk flat"><h3>Accounts</h3><code class="mod">auth/</code><p>Codex logins in any supported format become one <code>CodexCredential</code>.</p></div>
+      <div class="ly adapters sk flat"><h3>Adapters</h3><code class="mod">adapters/ · parsers/</code><p>An <code>AgentRequest</code> becomes the agent's own command; its output becomes an <code>AgentResult</code>.</p></div>
+      <div class="ly sandbox sk flat"><h3>Sandbox</h3><code class="mod">isolation.py</code><p><code>$HOME</code> points at the env, identity variables are dropped, credentials are written 0600 and refreshed logins are saved.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= QUICK START ================= -->
+<section class="sec" id="quick-start">
+  <div class="wrap">
+    <span class="eyebrow">Quick start</span>
+    <h2>Set it up <span class="dim">and run Codex as a second account.</span></h2>
+    <div class="qs">
+      <div class="step sk">
+        <div>
+          <span class="step-n sk">1</span>
+          <h3>Install</h3>
+          <p>Python 3.10 or newer, and the agent CLIs you already use. The extras add the terminal UI and reading the Cockpit Tools store.</p>
+        </div>
+        <div>
+          <div class="mini sk flat">
+            <div class="panel-h"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>bash</span><button class="copy" type="button">Copy</button></div>
+<pre><code>pip install <span class="t-s">"clippet[tui,cockpit] @ git+https://github.com/FanBB2333/CLIppet.git"</span></code></pre>
+          </div>
+          <div class="req" style="margin-top:14px"><span class="chip">Python 3.10+</span><span class="chip">Claude Code</span><span class="chip">Codex</span><span class="chip">Gemini CLI</span><span class="chip">QoderCLI</span></div>
+          <p class="req-note">Install only the agents you want to run; CLIppet starts the CLIs you already have.</p>
+        </div>
+      </div>
+      <div class="step sk">
+        <div>
+          <span class="step-n sk">2</span>
+          <h3>Make an env</h3>
+          <p>Copy your agent configuration (not your logins) into a new HOME, then log in inside it, or import an account you already have.</p>
+        </div>
+        <div class="mini sk flat">
+          <div class="panel-h"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>bash</span><button class="copy" type="button">Copy</button></div>
+<pre><code>clippet env create work --from-current
+clippet -e work codex login
+<span class="t-c"># or: clippet env import work cockpit --account 2</span></code></pre>
+        </div>
+      </div>
+      <div class="step sk">
+        <div>
+          <span class="step-n sk">3</span>
+          <h3>Run as that account</h3>
+          <p>Launch Codex in the env, pass any of its flags through, run it headless, or open the TUI to see every env at once.</p>
+        </div>
+        <div class="mini sk flat">
+          <div class="panel-h"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>bash</span><button class="copy" type="button">Copy</button></div>
+<pre><code>clippet -e work codex
+clippet -e work codex -p <span class="t-s">"Explain this repository"</span>
+clippet</code></pre>
+        </div>
+      </div>
+    </div>
+    <div class="allcmds">
+      <span>Then try the <a class="arrow-link" href="#examples">examples above <span aria-hidden="true">↑</span></a></span>
+      <a class="arrow-link" href="https://github.com/FanBB2333/CLIppet#8-python-sdk-quick-start">Python SDK <span aria-hidden="true">→</span></a>
+      <a class="arrow-link" href="https://github.com/FanBB2333/CLIppet#readme">README <span aria-hidden="true">→</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- ================= LIMITATIONS ================= -->
+<section class="sec" id="limitations">
+  <div class="wrap">
+    <span class="eyebrow">Limitations</span>
+    <h2>What CLIppet <span class="dim">can and can't do.</span></h2>
+    <div class="limit sk">
+      <div class="warn">
+        <div class="ico sk flat"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M10 3.2 17.5 16H2.5L10 3.2Z" stroke-linejoin="round"/><path d="M10 8.2v3.6M10 13.9h.01" stroke-linecap="round"/></svg></div>
+        <p>CLIppet chooses the HOME, the login and the environment an agent starts with. It is not a security sandbox, and it does not copy logins between envs unless you ask it to.</p>
+      </div>
+      <div>
+        <ul>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>The agent still runs as you, so it can read files outside its workspace and outside its env.</span></li>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>Credential stores keyed by absolute paths, such as the macOS Keychain, are only as separate as each agent makes them.</span></li>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>A login copied into two envs breaks one of them when its refresh token rotates. Log in inside each env, or link envs to the account manager.</span></li>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>Importing accounts from other tools works for Codex. Claude Code, Gemini CLI and QoderCLI log in inside an env or use their own settings files.</span></li>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>Headless runs print the final answer; tool calls, usage and session ids come back through the Python SDK.</span></li>
+        </ul>
+        <a class="arrow-link" href="https://github.com/FanBB2333/CLIppet#34-how-isolation-works-and-its-limits">How isolation works, and its limits <span aria-hidden="true">→</span></a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= CTA BAND ================= -->
+<section class="band">
+  <div class="dotted" aria-hidden="true"></div>
+  <div class="wrap">
+    <span class="eyebrow">Get started</span>
+    <h2>Try it with the accounts <span class="dim">you already have.</span></h2>
+    <div class="cmdline sk"><span class="t-p">$</span><code>pip install "clippet[tui,cockpit] @ git+https://github.com/FanBB2333/CLIppet.git"</code></div>
+    <p class="sub">Then run <code>clippet</code> in a terminal: the TUI shows your envs, the Codex account in each, and their recent sessions.</p>
+    <div class="ctas">
+      <a class="btn btn-primary sk" href="#quick-start">Get started <span class="k" aria-hidden="true">→</span></a>
+      <a class="btn btn-ghost sk" href="https://github.com/FanBB2333/CLIppet">View on GitHub</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ================= FOOTER ================= -->
+<footer>
+  <div class="wrap">
+    <div class="f-grid">
+      <div class="f-brand">
+        <a class="brand" href="#top">
+          <svg class="mk" viewBox="0 0 64 64" aria-hidden="true"><use href="#mark"/></svg>
+          CLIppet
+        </a>
+        <p>An execution layer for CLI coding agents, where every run picks who it is. Bug reports, adapters for more CLIs and new account formats are welcome.</p>
+        <div class="built">
+          <span><b>Python 3.10+</b> for the CLI and the SDK</span>
+          <span><b>Textual</b> for the terminal UI</span>
+          <span><b>cryptography</b> for reading Cockpit Tools</span>
+        </div>
+      </div>
+      <div>
+        <p class="f-h">Project</p>
+        <ul>
+          <li><a href="https://github.com/FanBB2333/CLIppet">GitHub</a></li>
+          <li><a href="https://github.com/FanBB2333/CLIppet/issues">Issues</a></li>
+          <li><a href="https://github.com/FanBB2333/CLIppet/blob/main/LICENSE">License</a></li>
+        </ul>
+      </div>
+      <div>
+        <p class="f-h">Docs</p>
+        <ul>
+          <li><a href="https://github.com/FanBB2333/CLIppet#1-quick-start">Quick start</a></li>
+          <li><a href="https://github.com/FanBB2333/CLIppet#3-accounts--environments">Accounts and environments</a></li>
+          <li><a href="https://github.com/FanBB2333/CLIppet#2-terminal-ui">Terminal UI</a></li>
+          <li><a href="https://github.com/FanBB2333/CLIppet#8-python-sdk-quick-start">Python SDK</a></li>
+        </ul>
+      </div>
+      <div>
+        <p class="f-h">Design</p>
+        <ul>
+          <li><a href="https://github.com/FanBB2333/CLIppet#14-architecture">Architecture</a></li>
+          <li><a href="https://github.com/FanBB2333/CLIppet/blob/main/docs/isolated-agent-environment.md" lang="zh-CN">隔离环境设计</a></li>
+          <li><a href="https://github.com/FanBB2333/CLIppet/blob/main/scripts/draw_art.py">How the drawings are made</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="f-bottom">
+      <span>Distributed under the MIT License.</span>
+      <span>Drawn with a seeded wobble; lettering in <a href="https://github.com/lxgw/LxgwWenKaiGB-Lite">LXGW WenKai GB Lite</a> (SIL OFL 1.1).</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var root = document.documentElement;
+  var reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  // ---------- Theme toggle (paper by default; the choice is kept when storage works) ----------
+  var THEME_KEY = 'clippet-theme';
+  var tbtn = document.querySelector('.theme-toggle');
+  var metaTheme = document.querySelector('meta[name="theme-color"]');
+  function applyTheme(t, persist){
+    root.setAttribute('data-theme', t);
+    if (tbtn) {
+      tbtn.setAttribute('aria-pressed', t === 'dark' ? 'true' : 'false');
+      tbtn.title = t === 'dark' ? 'Switch to the paper (light) theme' : 'Switch to the ink (dark) theme';
+    }
+    if (metaTheme) metaTheme.setAttribute('content', t === 'dark' ? '#1b1714' : '#f4eee2');
+    if (persist) { try { localStorage.setItem(THEME_KEY, t); } catch (e) {} }
+  }
+  applyTheme(root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light', false);
+  if (tbtn) tbtn.addEventListener('click', function(){
+    applyTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark', true);
+  });
+
+  // ---------- Hand-drawn outlines: the pen of scripts/draw_art.py ----------
+  var NS = 'http://www.w3.org/2000/svg';
+  function Pen(seed){ this.s = seed >>> 0; }
+  Pen.prototype.r = function(){ this.s = (Math.imul(this.s, 1664525) + 1013904223) >>> 0; return this.s / 4294967296; };
+  Pen.prototype.j = function(a){ return (this.r() - 0.5) * a; };
+  function dist(a, b){ return Math.hypot(b[0] - a[0], b[1] - a[1]); }
+  function seg(a, b, step){
+    var n = Math.max(2, Math.floor(dist(a, b) / step) + 2), out = [];
+    for (var i = 0; i < n; i++) out.push([a[0] + (b[0] - a[0]) * i / (n - 1), a[1] + (b[1] - a[1]) * i / (n - 1)]);
+    return out;
+  }
+  function arc(cx, cy, r, a0, a1){
+    var n = Math.max(2, Math.floor(Math.abs(a1 - a0) / 18) + 2), out = [];
+    for (var i = 0; i < n; i++) { var a = (a0 + (a1 - a0) * i / (n - 1)) * Math.PI / 180; out.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); }
+    return out;
+  }
+  function rrect(x, y, w, h, r){
+    r = Math.max(0, Math.min(r, w / 2, h / 2));
+    var p = seg([x + r, y], [x + w - r, y], 22);
+    if (r) p = p.concat(arc(x + w - r, y + r, r, -90, 0));
+    p = p.concat(seg([x + w, y + r], [x + w, y + h - r], 22));
+    if (r) p = p.concat(arc(x + w - r, y + h - r, r, 0, 90));
+    p = p.concat(seg([x + w - r, y + h], [x + r, y + h], 22));
+    if (r) p = p.concat(arc(x + r, y + h - r, r, 90, 180));
+    p = p.concat(seg([x, y + h - r], [x, y + r], 22));
+    if (r) p = p.concat(arc(x + r, y + r, r, 180, 270));
+    var out = [];
+    p.forEach(function(q){ if (!out.length || dist(out[out.length - 1], q) > 0.05) out.push(q); });
+    return out;
+  }
+  function wobble(pts, pen, amp, wl){
+    var len = [0];
+    for (var i = 1; i < pts.length; i++) len.push(len[i - 1] + dist(pts[i - 1], pts[i]));
+    var total = len[len.length - 1] || 1, n = Math.max(2, Math.floor(total / wl) + 2), dx = [], dy = [];
+    for (var k = 0; k < n; k++) dx.push(pen.j(amp * 2));
+    for (k = 0; k < n; k++) dy.push(pen.j(amp * 2));
+    return pts.map(function(p, i){
+      var t = len[i] / total * (n - 1), m = Math.min(Math.floor(t), n - 2), f = t - m;
+      f = f * f * (3 - 2 * f);
+      return [p[0] + dx[m] + (dx[m + 1] - dx[m]) * f, p[1] + dy[m] + (dy[m + 1] - dy[m]) * f];
+    });
+  }
+  function fx(v){ return Math.round(v * 10) / 10; }
+  function pathD(pts, closed){
+    var n = pts.length;
+    if (n < 2) return '';
+    function at(i){ return closed ? pts[(i + n) % n] : pts[Math.max(0, Math.min(n - 1, i))]; }
+    var d = 'M' + fx(pts[0][0]) + ',' + fx(pts[0][1]);
+    for (var i = 0, last = closed ? n : n - 1; i < last; i++) {
+      var p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+      d += 'C' + fx(p1[0] + (p2[0] - p0[0]) / 6) + ',' + fx(p1[1] + (p2[1] - p0[1]) / 6) + ' ' +
+           fx(p2[0] - (p3[0] - p1[0]) / 6) + ',' + fx(p2[1] - (p3[1] - p1[1]) / 6) + ' ' + fx(p2[0]) + ',' + fx(p2[1]);
+    }
+    return closed ? d + 'Z' : d;
+  }
+  function loop(pts, pen, over){
+    var n = pts.length, k = Math.floor(pen.r() * n), t = pts.slice(k).concat(pts.slice(0, k));
+    return t.concat(t.slice(0, Math.max(1, Math.floor(n * over)) + 1));
+  }
+  function shift(pts, dx, dy){ return pts.map(function(p){ return [p[0] + dx, p[1] + dy]; }); }
+
+  var sketches = Array.prototype.slice.call(document.querySelectorAll('.sk'));
+  function trace(el){
+    var w = el.clientWidth, h = el.clientHeight;
+    if (!w || !h) return;
+    var key = w + 'x' + h;
+    if (el._sk === key) return;
+    el._sk = key;
+    var svg = el._ink;
+    if (!svg) {
+      svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('class', 'sk-ink');
+      svg.setAttribute('aria-hidden', 'true');
+      svg.setAttribute('focusable', 'false');
+      el.insertBefore(svg, el.firstChild);
+      el._ink = svg;
+    }
+    svg.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+    var pen = new Pen(2654435761 * (el._seed + 1) + 97);
+    var r = parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0;
+    var amp = Math.min(1.5, 0.55 + Math.max(w, h) / 900);
+    var box = rrect(1.5, 1.5, w - 3, h - 3, r);
+    var out = '';
+    if (!el.classList.contains('flat')) out += '<path class="sh" d="' + pathD(wobble(shift(box, 4, 5), pen, 1.2, 70), true) + '"/>';
+    var paper = pathD(wobble(shift(box, 0.6, 0.6), pen, amp * 0.8, 70), true);
+    out += '<path class="bs" d="' + paper + '"/><path class="fl" d="' + paper + '"/>';  // paper under a tint
+    var ring = loop(box, pen, 0.05);
+    out += '<path class="i1" d="' + pathD(wobble(ring, pen, amp, 70)) + '"/>';
+    out += '<path class="i2" d="' + pathD(wobble(ring, pen, amp * 1.4, 70)) + '"/>';
+    svg.innerHTML = out;
+    el.classList.add('drawn');
+  }
+  sketches.forEach(function(el, i){ el._seed = i; });
+  if ('ResizeObserver' in window) {
+    var ro = new ResizeObserver(function(entries){ entries.forEach(function(en){ trace(en.target); }); });
+    sketches.forEach(function(el){ ro.observe(el); });
+  } else {
+    var all = function(){ sketches.forEach(trace); };
+    all();
+    window.addEventListener('resize', all);
+  }
+
+  // ---------- Tabs (each tablist on its own) ----------
+  document.querySelectorAll('[role="tablist"]').forEach(function(list){
+    var tabs = Array.prototype.slice.call(list.querySelectorAll('[role="tab"]'));
+    function select(t, focus){
+      tabs.forEach(function(x){
+        var on = x === t;
+        x.setAttribute('aria-selected', on ? 'true' : 'false');
+        x.tabIndex = on ? 0 : -1;
+        var p = document.getElementById(x.getAttribute('aria-controls'));
+        if (p) p.hidden = !on;
+      });
+      if (focus) t.focus();
+    }
+    tabs.forEach(function(t, i){
+      t.addEventListener('click', function(){ select(t); });
+      t.addEventListener('keydown', function(e){
+        if (e.key === 'ArrowRight') select(tabs[(i + 1) % tabs.length], true);
+        if (e.key === 'ArrowLeft') select(tabs[(i - 1 + tabs.length) % tabs.length], true);
+      });
+    });
+    if (tabs.length) select(tabs[0]);
+  });
+
+  // ---------- Copy buttons ----------
+  document.querySelectorAll('.copy').forEach(function(b){
+    b.addEventListener('click', function(){
+      var host = b.closest('.code-panel, .mini');
+      var pre = host && host.querySelector('pre');
+      if (!pre) return;
+      var text = pre.innerText.replace(/^\$ /gm, '');
+      var done = function(){ b.textContent = 'Copied'; b.classList.add('done'); setTimeout(function(){ b.textContent = 'Copy'; b.classList.remove('done'); }, 1400); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function(){ b.textContent = 'Select & copy'; });
+      } else { b.textContent = 'Select & copy'; }
+    });
+  });
+
+  // ---------- Gentle scroll reveal ----------
+  if (!reduceMotion && 'IntersectionObserver' in window) {
+    var targets = document.querySelectorAll('section.sec .eyebrow, section.sec h2, section.sec .sec-lead, .ways > .card, .fmts > .card, .bento > .card, .places > .card, .layers > .ly, .qs > .step, .art, .notes, .limit');
+    var counts = new Map();
+    targets.forEach(function(el){
+      var p = el.parentNode, n = counts.get(p) || 0;
+      counts.set(p, n + 1);
+      el.style.setProperty('--d', Math.min(n * 70, 280) + 'ms');
+      el.classList.add('rv');
+    });
+    root.classList.add('motion');
+    var rio = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){ if (en.isIntersecting) { en.target.classList.add('in'); rio.unobserve(en.target); } });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    targets.forEach(function(el){ rio.observe(el); });
+  }
+
+  // ---------- Hero storyboard ----------
+  var sb = document.getElementById('story');
+  if (!sb || reduceMotion || !('IntersectionObserver' in window) || !window.Promise || !window.requestAnimationFrame) return;
+  sb.classList.add('anim');
+
+  var canvas = sb.querySelector('.sb-canvas');
+  var scenes = {};
+  sb.querySelectorAll('.scene').forEach(function(s){ scenes[s.getAttribute('data-s')] = s; });
+  var cursor = sb.querySelector('.sb-cursor');
+  var ctl = sb.querySelector('.sb-ctl');
+  var chips = Array.prototype.slice.call(sb.querySelectorAll('.pchip'));
+  var target = sb.querySelector('.pchip[data-id="work"]');
+  var prompt = sb.querySelector('.prompt');
+  var typed = sb.querySelector('.typed');
+  var goBtn = sb.querySelector('.go');
+  var stepsEls = Array.prototype.slice.call(sb.querySelectorAll('.si'));
+  var tiles = Array.prototype.slice.call(sb.querySelectorAll('.tile'));
+  var rows = Array.prototype.slice.call(sb.querySelectorAll('.drow'));
+  var cta = sb.querySelector('.sb-cta');
+  var CMD = 'clippet -e work codex resume --last';
+
+  // split the shimmer text into letters (an opacity wave, no gradient text)
+  var sh = sb.querySelector('.shim');
+  var shText = sh.textContent; sh.textContent = '';
+  Array.prototype.forEach.call(shText, function(ch, i){
+    var s = document.createElement('span'); s.textContent = ch; s.style.setProperty('--i', i); sh.appendChild(s);
+  });
+
+  // pause when off-screen, when the tab is hidden, or when the visitor pauses
+  var userPaused = false, offscreen = true;
+  function paused(){ return userPaused || offscreen || document.hidden; }
+  function sync(){ sb.classList.toggle('paused', paused()); }
+  new IntersectionObserver(function(es){ offscreen = !es[0].isIntersecting; sync(); }, { threshold: 0.2 }).observe(sb);
+  document.addEventListener('visibilitychange', sync);
+  ctl.addEventListener('click', function(){
+    userPaused = !userPaused;
+    ctl.setAttribute('aria-pressed', userPaused ? 'true' : 'false');
+    ctl.setAttribute('aria-label', userPaused ? 'Play animation' : 'Pause animation');
+    sync();
+  });
+
+  // a timer that stops while paused
+  function wait(ms){
+    return new Promise(function(resolve){
+      var left = ms, last = null;
+      function tick(t){
+        if (last !== null && !paused()) left -= Math.min(t - last, 100);
+        last = t;
+        if (left <= 0) resolve(); else requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+  }
+  function show(name){
+    Object.keys(scenes).forEach(function(k){ scenes[k].classList.toggle('on', k === name); });
+  }
+  function point(el){
+    var c = canvas.getBoundingClientRect(), r = el.getBoundingClientRect();
+    return { x: r.left - c.left + r.width * 0.55, y: r.top - c.top + r.height * 0.6 };
+  }
+  function placeCursor(x, y){ cursor.style.transform = 'translate(' + (x - 3) + 'px,' + (y - 2) + 'px)'; }
+  async function moveTo(el){ var p = point(el); placeCursor(p.x, p.y); await wait(950); }
+  async function click(){
+    cursor.classList.add('down'); cursor.classList.remove('ring'); void cursor.offsetWidth; cursor.classList.add('ring');
+    await wait(150); cursor.classList.remove('down'); await wait(120);
+  }
+  function cursorIn(){
+    var c = canvas.getBoundingClientRect();
+    cursor.style.transition = 'none';
+    placeCursor(c.width * 0.82, c.height * 0.88);
+    void cursor.offsetWidth;
+    cursor.style.transition = '';
+    cursor.style.opacity = '1';
+  }
+  function cursorOut(){ cursor.style.opacity = '0'; }
+
+  function reset(){
+    chips.forEach(function(c){ c.classList.remove('in', 'sel'); });
+    prompt.classList.remove('in');
+    typed.textContent = '';
+    goBtn.classList.remove('pressed');
+    cta.classList.remove('pressed');
+    stepsEls.forEach(function(s){ s.classList.remove('shown', 'active', 'done'); });
+    tiles.forEach(function(t){ t.classList.remove('in'); });
+    rows.forEach(function(r){ r.classList.remove('in', 'done'); });
+    cursorOut();
+  }
+
+  async function run(){
+    for (;;) {
+      reset();
+      // 1. headline
+      show('head'); await wait(3000);
+      // 2. choose an env
+      show('pick'); await wait(350);
+      for (var i = 0; i < chips.length; i++) { chips[i].classList.add('in'); await wait(70); }
+      await wait(300);
+      cursorIn(); await wait(250);
+      await moveTo(target); await click(); target.classList.add('sel'); await wait(450);
+      // 3. type the command, then launch
+      prompt.classList.add('in'); await wait(450);
+      for (var k = 1; k <= CMD.length; k++) { typed.textContent = CMD.slice(0, k); await wait(CMD[k - 1] === ' ' ? 40 : 22); }
+      await wait(350);
+      await moveTo(goBtn); await click(); goBtn.classList.add('pressed'); await wait(160); goBtn.classList.remove('pressed');
+      await wait(350); cursorOut();
+      // 4. shimmer
+      show('shim'); await wait(2400);
+      // 5. launch steps, one by one
+      show('prog'); await wait(500);
+      for (var s = 0; s < stepsEls.length; s++) {
+        stepsEls[s].classList.add('shown', 'active'); await wait(s === 0 ? 900 : 760);
+        stepsEls[s].classList.remove('active'); stepsEls[s].classList.add('done'); await wait(260);
+      }
+      await wait(900);
+      // 6. who is Codex now
+      show('result'); await wait(450);
+      for (var t = 0; t < tiles.length; t++) { tiles[t].classList.add('in'); await wait(160); }
+      await wait(2800);
+      // 7. several envs at once
+      show('line'); await wait(2300);
+      show('dev'); await wait(400);
+      for (var r = 0; r < rows.length; r++) { rows[r].classList.add('in'); await wait(160); }
+      await wait(1100);
+      for (var d = 0; d < rows.length; d++) { rows[d].classList.add('done'); await wait(520); }
+      await wait(2000);
+      // 8. closing line, then the mark and the button
+      show('close'); await wait(2600);
+      show('end'); await wait(900);
+      cursorIn(); await wait(200); await moveTo(cta); await click(); cta.classList.add('pressed'); await wait(160); cta.classList.remove('pressed');
+      await wait(1800); cursorOut(); await wait(600);
+    }
+  }
+  run();
+})();
+</script>
+</body>
+</html>
