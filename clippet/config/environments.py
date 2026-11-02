@@ -285,19 +285,46 @@ def _copy_sanitized_claude_json(src: Path, dst: Path) -> None:
     _copy_scrubbed_json(src, dst, _CLAUDE_JSON_IDENTITY_KEYS)
 
 
-def _copy_scrubbed_json(src: Path, dst: Path, keys: tuple[str, ...]) -> None:
-    """Copy a JSON settings file minus the top-level *keys* that carry a login."""
+def _scrub_key(data: Any, path: str, prefix: str = "") -> list[str]:
+    """Drop the key at dotted *path* from *data*; a last part ending in ``*`` drops every key it begins.
+
+    Returns the dotted paths of the keys it dropped.
+    """
+
+    head, _, rest = path.partition(".")
+    if not isinstance(data, dict):
+        return []
+    if rest:
+        return _scrub_key(data.get(head), rest, f"{prefix}{head}.")
+    if head.endswith("*"):
+        dropped = [key for key in data if isinstance(key, str) and key.startswith(head[:-1])]
+    else:
+        dropped = [head] if head in data else []
+    for key in dropped:
+        data.pop(key)
+    return [prefix + key for key in dropped]
+
+
+def _copy_scrubbed_json(src: Path, dst: Path, keys: tuple[str, ...]) -> list[str] | None:
+    """Copy a JSON settings file minus the *keys* (dotted paths) that carry a login.
+
+    A file holding none of them is copied as it is.  Returns the keys left
+    out, or *None* when the file is not JSON and was not copied (it may hold
+    a login CLIppet cannot take out).
+    """
 
     try:
         data = json.loads(src.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return
-    if isinstance(data, dict):
-        for key in keys:
-            data.pop(key, None)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    dropped = [path for key in keys for path in _scrub_key(data, key)]
+    if not dropped:
+        _copy_entry(src, dst, ())
+        return []
     dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    dst.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     dst.chmod(0o600)
+    return dropped
 
 
 def validate_agents(agents: list[str] | None) -> list[str]:
@@ -334,17 +361,21 @@ def seed_from_home(
                 continue
             dst = target / rel
             if rel in spec.scrub and not with_auth:
-                _copy_scrubbed_json(src, dst, spec.scrub[rel])
+                dropped = _copy_scrubbed_json(src, dst, spec.scrub[rel])
+                if dropped is None:
+                    report.skipped_credentials.append(f"{rel} (not JSON)")
+                    continue
+                report.skipped_credentials.extend(f"{rel}: {key}" for key in dropped)
             else:
                 _copy_entry(src, dst, spec.exclude)
             report.copied.append(rel)
         for rel in spec.credentials:
             src = real_home / rel
-            if not src.is_file():
+            if not (src.is_file() or src.is_dir()):
                 continue
             if with_auth:
                 _copy_entry(src, target / rel, ())
-                (target / rel).chmod(0o600)
+                (target / rel).chmod(0o700 if (target / rel).is_dir() else 0o600)
                 report.copied.append(rel)
             else:
                 report.skipped_credentials.append(rel)
@@ -465,11 +496,28 @@ def create_home_env(
     return home_dir
 
 
-def _credential_paths() -> tuple[str, ...]:
-    paths: list[str] = []
+def _strip_logins(home: Path) -> None:
+    """Take every agent's login out of a copied HOME: its credential files and
+    folders, and the login keys of its JSON settings."""
+
     for spec in SEED_SPECS.values():
-        paths.extend(spec.credentials)
-    return tuple(paths)
+        for rel in spec.credentials:
+            path = home / rel
+            if path.is_dir() and not path.is_symlink():
+                shutil.rmtree(path)
+            elif path.exists() or path.is_symlink():
+                path.unlink()
+        for rel, keys in spec.scrub.items():
+            path = home / rel
+            if not path.is_file() or path.is_symlink():
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if [dropped for key in keys for dropped in _scrub_key(data, key)]:
+                path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+                path.chmod(0o600)
 
 
 def clone_home_env(
@@ -517,10 +565,7 @@ def clone_home_env(
         copy_tree(src_home, dst_home)
         dst_home.chmod(0o700)
         if not with_auth:
-            for rel in _credential_paths():
-                candidate = dst_home / rel
-                if candidate.is_file() or candidate.is_symlink():
-                    candidate.unlink()
+            _strip_logins(dst_home)
     except BaseException:
         shutil.rmtree(dst_home, ignore_errors=True)
         raise

@@ -441,14 +441,15 @@ def create_adapter_with_second_home(
 
     home_dir = str(Path(home_dir).resolve())
 
-    isolation = IsolationConfig(home_dir=home_dir)
-
     spec = agent_spec(agent_type)
     if spec is None:
         raise ValueError(
             f"Second-home mode is not supported for agent type '{agent_type}'. "
             f"Supported types: {agent_list()}."
         )
+    # an env is not your real HOME: what the agent should do differently there
+    run_env = {} if Path(home_dir) == Path.home().resolve() else dict(spec.run_env)
+    isolation = IsolationConfig(home_dir=home_dir, env_overrides=run_env)
     if spec.key == "codex" and (Path(home_dir) / ".codex" / "auth.json").is_file():
         # The env carries its login as a file; make sure a copied
         # config.toml selecting the OS keyring cannot hide it.
@@ -546,6 +547,8 @@ def create_adapter_from_config_file(
 
     # Use explicit agent_type when provided, otherwise use detected type
     effective_type = agent_type if agent_type is not None else detected
+    if effective_type == "claude":
+        effective_type = "claude_code"
 
     if effective_type == "claude_code":
         return create_adapter_from_claude_config(config_path)

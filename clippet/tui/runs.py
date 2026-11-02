@@ -1,8 +1,9 @@
 """Runs started from the TUI.
 
 A headless run is one agent, one env and one prompt, streamed while it works:
-Codex runs show their ``exec --json`` events as they arrive, other agents
-their output when they finish.  An interactive launch hands the terminal to
+each agent's JSON events (Codex ``exec --json``, the stream-json Claude Code
+and Qoder CLI share, pi's ``--mode json``, Copilot CLI's and Antigravity's)
+become steps as they arrive.  An interactive launch hands the terminal to
 the agent CLI the way ``clippet -e NAME AGENT ARGS...`` would, and comes back
 with its exit code and anything CLIppet had to say.
 """
@@ -75,7 +76,7 @@ class Run:
         if self.result is not None:
             if self.result.output_text:
                 return self.result.output_text
-            if self.agent != "codex" and self.result.raw_output:
+            if self.agent not in READERS and self.result.raw_output:
                 return self.result.raw_output
         messages = [s.text for s in self.steps if s.kind == "message"]
         return messages[-1] if messages else ""
@@ -91,6 +92,18 @@ class Run:
                 total += int(value)
                 found = True
         return total if found else None
+
+    @property
+    def cost(self) -> str | None:
+        """What the run cost, as its agent counts it (dollars, premium requests)."""
+
+        usage = self.usage or {}
+        if isinstance(usage.get("cost_usd"), (int, float)) and usage["cost_usd"] > 0:
+            return f"${usage['cost_usd']:.4f}".rstrip("0").rstrip(".") if usage["cost_usd"] < 1 else f"${usage['cost_usd']:.2f}"
+        premium = usage.get("premium_requests")
+        if isinstance(premium, (int, float)) and premium > 0:
+            return f"{premium:g} premium request" + ("" if premium == 1 else "s")
+        return None
 
     @property
     def activity(self) -> str:
@@ -137,7 +150,8 @@ class Run:
         """Take one line of the agent's stdout."""
 
         self.lines += 1
-        if self.agent != "codex":
+        reader = READERS.get(self.agent)
+        if reader is None:
             self.tail = (self.tail + [line])[-40:]
             return
         try:
@@ -146,24 +160,29 @@ class Run:
             if line.strip():
                 self.tail = (self.tail + [line])[-40:]
             return
-        if not isinstance(event, dict):
-            return
-        kind = event.get("type")
-        if kind == "thread.started":
-            self.session_id = event.get("thread_id") or self.session_id
-        elif kind == "turn.completed" and isinstance(event.get("usage"), dict):
-            self.usage = event["usage"]
-        elif kind == "turn.failed":
-            err = event.get("error")
-            message = err.get("message") if isinstance(err, dict) else None
-            self._put(Step("error", str(message or "turn failed"), state="failed"))
-        elif kind == "error" and event.get("message"):
-            # non-fatal: a failed turn arrives as turn.failed
-            self._put(Step("warning", str(event["message"]), state="done"))
-        elif kind in ("item.started", "item.updated", "item.completed") and isinstance(event.get("item"), dict):
-            step = step_from_item(event["item"], finished=kind == "item.completed")
-            if step is not None:
-                self._put(step)
+        if isinstance(event, dict):
+            reader(self, event)
+
+
+def _read_codex(run: Run, event: dict[str, Any]) -> None:
+    """``codex exec --json``."""
+
+    kind = event.get("type")
+    if kind == "thread.started":
+        run.session_id = event.get("thread_id") or run.session_id
+    elif kind == "turn.completed" and isinstance(event.get("usage"), dict):
+        run.usage = event["usage"]
+    elif kind == "turn.failed":
+        err = event.get("error")
+        message = err.get("message") if isinstance(err, dict) else None
+        run._put(Step("error", str(message or "turn failed"), state="failed"))
+    elif kind == "error" and event.get("message"):
+        # non-fatal: a failed turn arrives as turn.failed
+        run._put(Step("warning", str(event["message"]), state="done"))
+    elif kind in ("item.started", "item.updated", "item.completed") and isinstance(event.get("item"), dict):
+        step = step_from_item(event["item"], finished=kind == "item.completed")
+        if step is not None:
+            run._put(step)
 
 
 def step_from_item(item: dict[str, Any], finished: bool) -> Step | None:
@@ -210,6 +229,222 @@ def step_from_item(item: dict[str, Any], finished: bool) -> Step | None:
     return None
 
 
+# --- other agents' events --------------------------------------------------------
+
+_COMMAND_TOOLS = {"bash", "shell", "powershell", "run_command", "run_shell_command", "exec_command",
+                  "execute_command", "command"}
+_EDIT_TOOLS = {"edit", "write", "multiedit", "notebookedit", "create", "str_replace_editor", "apply_patch",
+               "write_file", "edit_file", "replace", "write_to_file", "replace_file_content",
+               "multi_replace_file_content"}
+_SEARCH_TOOLS = {"websearch", "web_search", "webfetch", "web_fetch", "search_web", "read_url_content", "fetch"}
+
+
+def _first(values: Any, *names: str) -> str:
+    if isinstance(values, dict):
+        for name in names:
+            value = values.get(name)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+    return ""
+
+
+def _text_of(content: Any) -> str:
+    """The text of a tool result or message: a string, or blocks carrying ``text``."""
+
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        return _text_of(content.get("content") if "content" in content else content.get("text"))
+    if isinstance(content, list):
+        return "\n".join(part for part in (_text_of(item) for item in content) if part)
+    return ""
+
+
+def _tail(text: str, lines: int = 6) -> str:
+    return "\n".join(text.rstrip().splitlines()[-lines:])
+
+
+def tool_step(name: Any, args: Any, key: str, state: str) -> Step:
+    """A step for a tool call, whichever agent made it."""
+
+    name = str(name or "tool")
+    plain = name.lower().rsplit(".", 1)[-1]
+    if plain in _COMMAND_TOOLS:
+        return Step("command", _first(args, "command", "CommandLine", "cmd") or name, key=key, state=state)
+    if plain in _EDIT_TOOLS:
+        target = _first(args, "file_path", "path", "filePath", "TargetFile", "AbsolutePath", "notebook_path")
+        return Step("edit", target or name, key=key, state=state)
+    if plain in _SEARCH_TOOLS:
+        return Step("search", _first(args, "query", "url", "Url", "Query") or name, key=key, state=state)
+    if plain in ("todowrite", "update_todos", "write_todos") and isinstance(args, dict):
+        todos = args.get("todos") if isinstance(args.get("todos"), list) else []
+        done = [t for t in todos if isinstance(t, dict) and t.get("status") == "completed"]
+        lines = [("☑ " if t in done else "☐ ") + str(t.get("content") or t.get("text") or "")
+                 for t in todos if isinstance(t, dict)]
+        return Step("todo", f"{len(done)}/{len(todos)} done", detail="\n".join(lines), key=key, state=state)
+    hint = _first(args, "file_path", "path", "pattern", "query", "description")
+    return Step("tool", f"{name} {hint}".strip(), key=key, state=state)
+
+
+def _finish_tool(run: Run, key: str, failed: bool, output: str) -> None:
+    step = run._step(key)
+    if step is None:
+        return
+    step.state = "failed" if failed else "done"
+    tail = _tail(output)
+    if tail and step.kind != "todo":
+        step.detail = tail
+
+
+def _reasoning(text: str, key: str) -> Step:
+    text = text.strip()
+    first = text.splitlines()[0].strip().strip("*").strip() if text else ""
+    return Step("reasoning", first or "thinking", detail=text, key=key, state="done")
+
+
+def _read_claude(run: Run, event: dict[str, Any]) -> None:
+    """Claude Code's ``--output-format stream-json``, which Qoder CLI speaks too."""
+
+    from clippet.parsers.extractors import claude_usage
+
+    kind = event.get("type")
+    if event.get("session_id"):
+        run.session_id = str(event["session_id"])
+    message = event.get("message") if isinstance(event.get("message"), dict) else {}
+    blocks = message.get("content") if isinstance(message.get("content"), list) else []
+    if kind == "assistant":
+        stem = str(event.get("uuid") or message.get("id") or run.lines)
+        for index, block in enumerate(blocks):
+            if not isinstance(block, dict):
+                continue
+            key = f"{stem}:{index}"
+            if block.get("type") == "text" and str(block.get("text") or "").strip():
+                run._put(Step("message", str(block["text"]), key=key, state="done"))
+            elif block.get("type") == "thinking" and block.get("thinking"):
+                run._put(_reasoning(str(block["thinking"]), key))
+            elif block.get("type") == "tool_use":
+                run._put(tool_step(block.get("name"), block.get("input"), str(block.get("id") or key), "running"))
+    elif kind == "user":
+        for block in blocks:
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                _finish_tool(run, str(block.get("tool_use_id") or ""), bool(block.get("is_error")),
+                             _text_of(block.get("content")))
+    elif kind == "result":
+        run.usage = claude_usage(event.get("usage"), event.get("total_cost_usd"))
+        subtype = str(event.get("subtype") or "")
+        if event.get("is_error") or subtype.startswith("error"):
+            errors = event.get("errors") if isinstance(event.get("errors"), list) else []
+            text = "; ".join(str(e) for e in errors) or str(event.get("result") or subtype or "the run failed")
+            run._put(Step("error", text, state="failed"))
+
+
+def _read_pi(run: Run, event: dict[str, Any]) -> None:
+    """``pi --mode json``."""
+
+    from clippet.adapters.pi import FAILED_STOPS, pi_usage
+
+    kind = event.get("type")
+    if kind == "session" and event.get("id"):
+        run.session_id = str(event["id"])
+    elif kind == "message_end" and isinstance(event.get("message"), dict):
+        message = event["message"]
+        if message.get("role") != "assistant":
+            return
+        usage = dict(run.usage or {})
+        pi_usage(message.get("usage"), usage)
+        run.usage = usage or None
+        stem = f"m{run.lines}"
+        for index, block in enumerate(message.get("content") or []):
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text" and str(block.get("text") or "").strip():
+                run._put(Step("message", str(block["text"]), key=f"{stem}:{index}", state="done"))
+            elif block.get("type") == "thinking" and block.get("thinking"):
+                run._put(_reasoning(str(block["thinking"]), f"{stem}:{index}"))
+        if message.get("stopReason") in FAILED_STOPS:
+            text = message.get("errorMessage") or f"the model stopped: {message.get('stopReason')}"
+            run._put(Step("error", str(text), state="failed"))
+    elif kind == "tool_execution_start":
+        run._put(tool_step(event.get("toolName"), event.get("args"), str(event.get("toolCallId") or ""), "running"))
+    elif kind == "tool_execution_end":
+        _finish_tool(run, str(event.get("toolCallId") or ""), bool(event.get("isError")), _text_of(event.get("result")))
+
+
+def _read_copilot(run: Run, event: dict[str, Any]) -> None:
+    """``copilot -p … --output-format json``."""
+
+    from clippet.adapters.copilot import copilot_usage
+
+    kind = event.get("type")
+    data = event.get("data") if isinstance(event.get("data"), dict) else {}
+    if kind == "assistant.message" and not event.get("agentId"):
+        content = data.get("content")
+        if isinstance(content, str) and content.strip():
+            run._put(Step("message", content, key=str(event.get("id") or data.get("messageId") or ""), state="done"))
+    elif kind == "assistant.reasoning" and not event.get("agentId"):
+        text = data.get("content")
+        if isinstance(text, str) and text.strip():
+            run._put(_reasoning(text, str(event.get("id") or "")))
+    elif kind == "tool.execution_start":
+        run._put(tool_step(data.get("toolName"), data.get("arguments"), str(data.get("toolCallId") or ""), "running"))
+    elif kind == "tool.execution_complete":
+        result = data.get("result") if isinstance(data.get("result"), dict) else {}
+        error = data.get("error") if isinstance(data.get("error"), dict) else {}
+        output = str(result.get("content") or error.get("message") or "")
+        _finish_tool(run, str(data.get("toolCallId") or ""), data.get("success") is False, output)
+    elif kind == "session.error":
+        run._put(Step("error", str(data.get("message") or data.get("errorType") or "session error"), state="failed"))
+    elif kind == "result":
+        if event.get("sessionId"):
+            run.session_id = str(event["sessionId"])
+        run.usage = copilot_usage(event.get("usage"))
+
+
+def _read_agy(run: Run, event: dict[str, Any]) -> None:
+    """``agy -p … --output-format stream-json``."""
+
+    from clippet.adapters.antigravity import agy_usage
+
+    kind = event.get("event")
+    payload = event.get(kind) if isinstance(kind, str) and isinstance(event.get(kind), dict) else {}
+    if payload.get("conversation_id") or event.get("conversation_id"):
+        run.session_id = str(payload.get("conversation_id") or event.get("conversation_id"))
+    if kind == "step_update":
+        key = f"s{payload.get('step_index')}"
+        done = payload.get("state") == "DONE"
+        if payload.get("step_type") == "agent_response":
+            existing = run._step(key)
+            text = (existing.text if existing is not None else "") + str(payload.get("text_delta") or "")
+            if text.strip():
+                run._put(Step("message", text, key=key, state="done" if done else "running"))
+        elif payload.get("step_type") == "tool" and isinstance(payload.get("tool_info"), dict):
+            info = payload["tool_info"]
+            step = tool_step(info.get("name") or payload.get("tool_name"), info.get("parameters"), key,
+                             "done" if done else "running")
+            error = info.get("error") if isinstance(info.get("error"), dict) else None
+            if error is not None:
+                step.state = "failed"
+            output = _text_of(error.get("message") if error else info.get("output"))
+            if done and output:
+                step.detail = _tail(output)
+            run._put(step)
+    elif kind == "result":
+        run.usage = agy_usage(payload.get("usage"))
+        if payload.get("status") not in (None, "SUCCESS"):
+            run._put(Step("error", str(payload.get("error") or f"agy ended: {payload.get('status')}"), state="failed"))
+
+
+#: How each agent's headless runs are read as they stream (others are shown when they end).
+READERS: dict[str, Callable[[Run, dict[str, Any]], None]] = {
+    "codex": _read_codex,
+    "claude": _read_claude,
+    "qodercli": _read_claude,
+    "pi": _read_pi,
+    "copilot": _read_copilot,
+    "agy": _read_agy,
+}
+
+
 # --- starting runs -------------------------------------------------------------
 
 
@@ -224,6 +459,8 @@ def adapter_for(env: EnvView, agent: str, sandbox: str | None = None) -> BaseSub
     )
 
     kwargs: dict[str, Any] = {"sandbox": sandbox} if agent == "codex" and sandbox else {}
+    if agent in ("claude", "qodercli"):
+        kwargs["output_format"] = "stream-json"  # read as it streams (READERS)
     if env.kind == BASE:
         spec = agent_spec(agent)
         if spec is None:
@@ -234,25 +471,27 @@ def adapter_for(env: EnvView, agent: str, sandbox: str | None = None) -> BaseSub
     if env.is_home:
         return create_adapter_with_second_home(env.path, agent, **kwargs)
     detected = detect_config_type(str(env.path))
-    if detected != agent:
+    if agent_spec(detected) is not agent_spec(agent):  # "claude_code" is how detection says claude
         raise ValueError(f"env '{env.name}' holds a {detected} config, so it cannot run {agent}")
     adapter = create_adapter_from_config_file(str(env.path), agent)
-    if kwargs:
-        adapter.sandbox = sandbox
+    for name, value in kwargs.items():
+        setattr(adapter, name, value)
     return adapter
 
 
 def prepare_env(env: EnvView, agent: str) -> list[str]:
     """Upkeep before a run in a HOME env: shared dotfiles, a linked Codex login."""
 
+    from clippet.agents import agent_spec
     from clippet.config.environments import sync_linked_codex_credential
     from clippet.isolation import ensure_shared_links
 
     notes: list[str] = []
     if env.kind != "home" or env.path is None or not env.exists:
         return notes
+    spec = agent_spec(agent)
     try:
-        ensure_shared_links(env.path, env.share)
+        ensure_shared_links(env.path, [*env.share, *(spec.runtime if spec else ())])
     except OSError as exc:
         notes.append(f"could not link shared dotfiles: {exc}")
     if agent == "codex":

@@ -15,6 +15,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable
 
+from clippet.agents import agent_spec
 from clippet.tui.anim import dur, gleam
 from clippet.tui.look import (
     AGENT_COLOR,
@@ -247,15 +248,15 @@ class RunsPlace(Place):
             parts.append(heading("Answer", p))
             parts.append(Padding(Markdown(answer, code_theme="ansi_dark" if self.clippet.is_dark else "ansi_light"),
                                  (0, 0, 0, 2)))
-        elif run.agent != "codex" and run.tail and run.active:
+        elif run.tail and run.active:  # output no reader turned into steps
             parts.append(Text("\n".join(run.tail[-8:]), style=p["faint"]))
         if run.error:
             parts.append(Text())
             parts.append(Text(f"✕ {run.error}", style=p["bad"]))
         if not run.active:
             foot = Text()
-            if run.usage:
-                usage = run.usage
+            usage = run.usage or {}
+            if run.tokens is not None:
                 foot.append("  tokens ", style=p["muted"])
                 foot.append(f"in {usage.get('input_tokens', '—')}", style=p["ink"])
                 cached = usage.get("cached_input_tokens")
@@ -263,10 +264,15 @@ class RunsPlace(Place):
                     foot.append(f" (cached {cached})", style=p["muted"])
                 foot.append(f" · out {usage.get('output_tokens', '—')}", style=p["ink"])
                 foot.append("\n")
+            if run.cost:
+                foot.append("  cost ", style=p["muted"])
+                foot.append(run.cost, style=p["ink"])
+                foot.append("\n")
             if run.session_id:
                 foot.append("  session ", style=p["muted"])
                 foot.append(run.session_id, style=p["faint"])
-                if run.agent in ("codex", "claude"):
+                spec = agent_spec(run.agent)
+                if spec is not None and spec.resume_args(run.session_id):
                     foot.append("\n  c", style=f"bold {p['brand']}")
                     foot.append(" continues it interactively in the same env", style=p["muted"])
             if foot:

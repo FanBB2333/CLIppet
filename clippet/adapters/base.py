@@ -109,6 +109,10 @@ class BaseSubprocessAdapter(BaseAdapter):
     #: dropped in isolated runs (see :data:`clippet.isolation.AGENT_IDENTITY_ENV_VARS`).
     isolation_agent: str | None = None
 
+    #: Give the subprocess an empty stdin when no input is sent, instead of
+    #: inheriting ours (for CLIs that read piped stdin to its end first).
+    close_stdin: bool = False
+
     def __init__(self, **kwargs: Any) -> None:
         """Initialize the adapter with optional configuration.
 
@@ -375,7 +379,7 @@ class BaseSubprocessAdapter(BaseAdapter):
                 command,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                stdin=subprocess.PIPE if stdin_bytes else None,
+                stdin=subprocess.PIPE if stdin_bytes else (subprocess.DEVNULL if self.close_stdin else None),
                 cwd=cwd,
                 env=env,
             )
@@ -449,7 +453,7 @@ class BaseSubprocessAdapter(BaseAdapter):
 
         if stdin_bytes:
             stdin = asyncio.subprocess.PIPE
-        elif on_output is not None:
+        elif on_output is not None or self.close_stdin:
             stdin = asyncio.subprocess.DEVNULL
         else:
             stdin = None

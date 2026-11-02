@@ -4,7 +4,7 @@
 
 A unified Python adapter framework for orchestrating heterogeneous CLI AI agents.
 
-CLIppet turns scattered, stateless CLI tools — Claude Code, Codex, QoderCLI, Gemini CLI, and others — into strongly-typed, structured-output Python objects with unified execution, isolation, and credential management.
+CLIppet turns scattered, stateless CLI tools — Codex, Claude Code, Gemini CLI, Qoder CLI, pi, GitHub Copilot CLI and Google Antigravity CLI — into strongly-typed, structured-output Python objects with unified execution, isolation, and credential management.
 
 ![CLIppet: one CLI to orchestrate them all](resources/banner.svg)
 
@@ -100,7 +100,13 @@ What `--from-current` copies — and what it deliberately does not:
 | `~/.codex/config.toml`, `AGENTS.md`, `skills/`, `prompts/`, `rules/`, `hooks.json` | sessions, history, logs, sqlite DBs, caches, sockets |
 | `~/.claude/settings.json`, `CLAUDE.md`, `agents/`, `commands/`, `skills/`, `~/.claude.json` (MCP; account keys stripped) | `~/.claude/projects` transcripts |
 | `~/.gemini/settings.json`, `GEMINI.md`, `commands/`, `extensions/` | |
-| **Credentials only with `--with-auth`**: `.codex/auth.json`, `.claude/.credentials.json`, `.gemini/.env`, `oauth_creds.json` | |
+| `~/.qoder/settings.json`, `AGENTS.md`, `rules/`, `commands/`, `agents/`, `skills/`, `hooks/` … | `~/.qoder/projects` sessions, caches |
+| `~/.pi/agent/settings.json`, `mcp.json`, `AGENTS.md`, `extensions/`, `skills/`, `prompts/`, `themes/` | pi sessions, its managed install |
+| `~/.copilot/settings.json`, `copilot-instructions.md`, `agents/`, `skills/`, `mcp-config.json` … | Copilot session state, logs |
+| `~/.gemini/antigravity-cli/settings.json`, `keybindings.json`, `skills/`, `~/.gemini/config` | Antigravity conversations |
+| **Credentials only with `--with-auth`**: `.codex/auth.json`, `.claude/.credentials.json`, `.gemini/.env`, `oauth_creds.json`, `.qoder/.auth/` and BYOK `.qoder/.models/`, `.pi/agent/auth.json` and `models.json`, `.copilot/config.json` and `providers.json`, Antigravity's token file | |
+
+Settings files can carry a login too; without `--with-auth` those keys are left out and listed: `apiKeyHelper` and the `ANTHROPIC_*` / `AWS_*` entries of the `env` block in Claude's `settings.json` (a third-party endpoint goes with its key), the account keys of `~/.claude.json`, Qoder's BYOK `modelConfigs.customModels`, Antigravity's `modelProvider` (it would refuse to start without the key it names), pi's device id.
 
 > **Why logins are not copied by default** — OpenAI (and Anthropic) rotate OAuth refresh tokens: the first copy that refreshes invalidates every other copy, and reusing an old refresh token can revoke the whole login. For parallel long-term use, log in separately inside each env. `--with-auth` is there when you knowingly want a copy.
 
@@ -110,12 +116,12 @@ New envs also **link** (not copy) `~/.gitconfig` and `~/.config/git` from your r
 clippet env list                     # envs with the Codex account each one carries
 clippet env status [name]            # detailed identity: account, plan, token expiry, source
 clippet env path work                # print the HOME path
-clippet env clone work scratch       # duplicate (sessions included, logins excluded unless --with-auth)
+clippet env clone work scratch       # duplicate (sessions included, logins only with --with-auth)
 clippet env remove scratch           # unregister, keep the directory
 clippet env remove scratch --purge   # also delete ~/.clippet/envs/scratch/
 ```
 
-Running bare `clippet codex` (or `claude` / `gemini` / `qodercli`) in a terminal opens a small picker listing `base` (your real HOME) and every env, with the Codex account of each.
+Running bare `clippet codex` (or `claude` / `gemini` / `qodercli` / `pi` / `copilot` / `agy`) in a terminal opens a small picker listing `base` (your real HOME) and every env, with the Codex account of each.
 
 ### 3.2 Importing Codex accounts from other tools
 
@@ -186,7 +192,9 @@ Interactive launches only add the flags you configured — CLIppet does not inje
 
 ### 3.4 How isolation works (and its limits)
 
-- `$HOME` points at the env (or a temp dir). Variables that would redirect an agent elsewhere are removed from the inherited environment: `CODEX_HOME`, `CODEX_API_KEY`, `OPENAI_API_KEY`, `OPENAI_BASE_URL` (Codex), `ANTHROPIC_*`, `CLAUDE_CONFIG_DIR` (Claude), `GEMINI_*` / `GOOGLE_*` credentials (Gemini) and `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_STATE_HOME` / `XDG_CACHE_HOME`. Values from your credential file or `env_overrides` are applied afterwards. Opt out in Python with `IsolationConfig(scrub_agent_env=False)`.
+- `$HOME` points at the env (or a temp dir). Variables that would redirect an agent elsewhere are removed from the inherited environment: for example `CODEX_HOME`, `OPENAI_API_KEY` (Codex), `ANTHROPIC_*`, `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN` (Claude), `GEMINI_API_KEY`, `GOOGLE_*` credentials (Gemini, Antigravity), `GH_TOKEN`, `COPILOT_PROVIDER_*` (Copilot), `QODER_*` tokens (Qoder), the provider keys pi reads, and `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_STATE_HOME` / `XDG_CACHE_HOME`; the full lists are in `clippet/agents.py`. Values from your credential file or `env_overrides` are applied afterwards. Opt out in Python with `IsolationConfig(scrub_agent_env=False)`.
+- In an env (not in your real HOME) Claude Code and Antigravity CLI run with their self-updaters off, so no env downloads its own copy of the binary. pi's own Node.js and Copilot CLI's unpacked package are linked into envs from your real HOME instead of being installed per env.
+- Some agents keep their login in the OS keychain, which a `$HOME` does not separate. On macOS they look for the login keychain under `$HOME` and find none under an env's: Copilot CLI and Antigravity CLI then keep the login in a file inside the env (Copilot asks first: answer `y`), and Claude Code may do the same (not verified with a real Claude account). If macOS says a keychain cannot be found, choose **Cancel**, never "Reset To Defaults". On Linux desktops and Windows the envs share one keyring for those agents. Qoder CLI and pi keep their logins in files.
 - When CLIppet injects a Codex `auth.json`, it also passes `-c cli_auth_credentials_store="file"` so a `config.toml` that selects the OS keyring cannot hide it.
 - This is HOME/environment isolation, not a security sandbox: the agent can still read files outside its workspace, and credential stores keyed by absolute paths (e.g. the macOS Keychain) are only as separate as the tool makes them.
 - `CLIPPET_HOME` relocates `~/.clippet` (registry and envs).
@@ -276,14 +284,14 @@ CLIppet solves all of this with a single `adapter.run(request)` call — and the
 ## 6. Features
 
 - **Unified Protocol** — consistent `run()` / `run_async()` interface across all adapters
-- **Structured Output** — final answer, tool calls, step count, token usage and session id (Codex via `codex exec --json`, Claude via JSON output)
+- **Structured Output** — final answer, tool calls, step count, token usage, cost and session id from each agent's own JSON events (Codex `exec --json`, Claude Code and Qoder CLI `stream-json`, pi `--mode json`, Copilot CLI and Antigravity CLI JSON output)
 - **Identity layer** — persistent HOME envs, multi-format Codex credentials (Codex, Cockpit Tools, sub2api, CLIProxyAPI), linked imports, refreshed-token write-back
 - **Sandbox Isolation** — per-run credential injection, identity env-var scrubbing, temporary workspaces
 - **Parallel Orchestration** — `ClippetRunner` dispatches multiple agents concurrently via thread pool or asyncio
 - **Terminal UI** — `clippet tui`: envs, accounts, streamed runs (one prompt in many envs), project pins and checks
-- **Live output** — `run_async(request, on_output=...)` streams each line (Codex events) while the agent works
+- **Live output** — `run_async(request, on_output=...)` streams each line while the agent works; the TUI turns every agent's events into steps as they arrive
 - **Declarative Config** — YAML/JSON-based adapter registration with credential profiles; per-project `.clippet.json`
-- **Built-in Adapters** — Claude Code, Codex, QoderCLI, and Gemini CLI out of the box; extensible via `BaseSubprocessAdapter`
+- **Built-in Adapters** — Codex, Claude Code, Gemini CLI, Qoder CLI, pi, GitHub Copilot CLI and Google Antigravity CLI out of the box; extensible via `BaseSubprocessAdapter` and one entry in `clippet/agents.py`
 
 ---
 
@@ -544,11 +552,15 @@ clippet/
 │   ├── claude.py        # Claude Code CLI adapter
 │   ├── codex.py         # Codex CLI adapter (+ exec --json event parser)
 │   ├── gemini.py        # Gemini CLI adapter
-│   ├── qodercli.py      # QoderCLI adapter
+│   ├── qodercli.py      # Qoder CLI adapter (stream-json, as Claude Code's)
+│   ├── pi.py            # pi adapter (--mode json)
+│   ├── copilot.py       # GitHub Copilot CLI adapter (--output-format json)
+│   ├── antigravity.py   # Google Antigravity CLI adapter (stream-json)
 │   ├── api.py           # OpenAIAdapter: calls the API directly (optional, clippet[api])
 │   └── personas.py      # Persona prompts and skill blocks
 ├── parsers/
 │   └── extractors.py    # JSON/text output parsers
+├── agents.py            # What differs between the agent CLIs: files, logins, variables, resume
 ├── isolation.py         # Sandbox environments, credential providers, env scrubbing
 ├── models.py            # AgentRequest, AgentResult, IsolationConfig, ToolCallRecord
 └── protocols.py         # ClippetAdapter protocol
@@ -568,10 +580,15 @@ clippet/
 
 | Adapter | CLI Tool | Key Flags |
 |---------|----------|-----------|
-| `ClaudeAdapter` | `claude -p --output-format json` | `--model`, `--permission-mode`, `--max-turns`, `--allowed-tools` |
+| `ClaudeAdapter` | `claude -p --output-format json` (or `stream-json`) | `--model`, `--permission-mode`, `--max-turns`, `--allowed-tools` |
 | `CodexAdapter` | `codex exec --json` | `--model`, `--sandbox`, `--cd`, `--add-dir`, `--skip-git-repo-check`, `-c` |
-| `QoderCLIAdapter` | `qodercli` | `-p`, `--model`, `--max-turns`, `-w` (workspace) |
+| `QoderCLIAdapter` | `qodercli -p … -o stream-json` | `--model`, `--max-turns`, `-w`, `--permission-mode` (headless default `--yolo`), `--append-system-prompt` |
 | `GeminiAdapter` | `gemini` | `--model`, config via `.env` file |
+| `PiAdapter` | `pi --mode json -- PROMPT` | `--provider`, `--model`, `--thinking`, `--tools`, `--append-system-prompt` |
+| `CopilotAdapter` | `copilot -p … --output-format json` | `--model`, `--effort`, `--allow-all-tools` (or `--allow-all`), `--allow-tool`, `--deny-tool`, `--add-dir` |
+| `AntigravityAdapter` | `agy -p … --output-format stream-json` | `--model`, `--effort`, `--mode`, `--add-dir`, `--dangerously-skip-permissions` (headless default) |
+
+Headless runs cannot answer a permission prompt, so they start with the agent's "allow" switch (`--yolo`, `--allow-all-tools`, `--dangerously-skip-permissions`); each adapter takes an option to leave it off.
 
 ### 14.3 Extending with Custom Adapters
 

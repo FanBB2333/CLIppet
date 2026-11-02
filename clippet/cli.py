@@ -527,8 +527,9 @@ def _prepare_home_env(name: str, profile: dict, agent_type: str | None) -> None:
     """Pre-launch upkeep for a registered HOME env (links, linked logins)."""
 
     home_dir = Path(profile.get("home_dir") or "")
+    spec = agent_spec(agent_type)
     try:
-        ensure_shared_links(home_dir, shared_entries(profile))
+        ensure_shared_links(home_dir, [*shared_entries(profile), *(spec.runtime if spec else ())])
     except OSError as exc:
         _note(f"could not link shared dotfiles into env '{name}': {exc}")
 

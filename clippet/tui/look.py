@@ -29,12 +29,14 @@ PALETTES: dict[str, dict[str, str]] = {
         ok="#8cb878", warn="#e0ad4c", bad="#e0705a", info="#7eaedc", plum="#b49ad6",
         bg="#1b1714", panel="#24201b", raised="#302922",
         run="#e08a4c", done="#6fa3d8", failed="#d66c95", queued="#a3927b",
+        teal="#6fbfae", rose="#d98aa6", gold="#d9b85c",
     ),
     "clippet-paper": dict(
         brand="#c2663f", hi="#5e2a12", ink="#2f261d", muted="#857560", faint="#cfc2ac",
         ok="#5f8a52", warn="#b37f22", bad="#b9543f", info="#3a76b0", plum="#7a5c9e",
         bg="#f4eee2", panel="#fcf8f0", raised="#efe6d6",
         run="#d0743a", done="#3a76b0", failed="#a8325e", queued="#a3927b",
+        teal="#2f7f72", rose="#a34f6d", gold="#8a6d1f",
     ),
 }
 DEFAULT_THEME = "clippet"

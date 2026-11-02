@@ -115,17 +115,17 @@ def create_runner_from_config(config: ClippetConfig) -> ClippetRunner:
         ValueError: If an unknown adapter_type or credential profile is specified.
     """
 
-    adapter_classes = {key: spec.adapter_class() for key, spec in AGENTS.items()}
 
     runner = ClippetRunner(max_workers=config.max_workers)
 
     for adapter_config in config.adapters:
-        adapter_class = adapter_classes.get(adapter_config.adapter_type)
+        spec = AGENTS.get(adapter_config.adapter_type)
+        adapter_class = spec.adapter_class() if spec is not None else None
 
         if adapter_class is None:
             raise ValueError(
                 f"Unknown adapter type: '{adapter_config.adapter_type}'. "
-                f"Valid types are: {list(adapter_classes.keys())}"
+                f"Valid types are: {agent_list()}."
             )
 
         adapter_options = dict(adapter_config.options)

@@ -16,6 +16,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable
 
+from clippet.auth.logins import login_of
 from clippet.tui.data import (
     BASE,
     EnvView,
@@ -230,6 +231,7 @@ class EnvsPlace(Place):
                 line.append(agent, style=p[AGENT_COLOR[agent]] if present else p["muted"])
                 line.append("   ")
             parts.append(line)
+            parts.extend(self.agent_lines(env))
             if env.share and not env.is_base:
                 shared = Text("  shared  ", style=p["muted"])
                 for i, entry in enumerate(env.share):
@@ -245,6 +247,20 @@ class EnvsPlace(Place):
         else:
             parts.append(Text("A file alias: each run copies this file into a fresh temporary HOME.", style=p["muted"]))
         return Group(*parts)
+
+    def agent_lines(self, env: EnvView) -> list[Text]:
+        """Per agent other than Codex: who it is logged in as here."""
+
+        p = self.pal
+        lines: list[Text] = []
+        for agent in AGENTS:
+            who = None if agent == "codex" else login_of(env.path, agent)
+            if who is None:
+                continue
+            line = Text(f"  {agent:<9}", style=p[AGENT_COLOR[agent]])
+            line.append(who, style=p["ink"])
+            lines.append(line)
+        return lines
 
     def codex_block(self, env: EnvView) -> Text:
         p = self.pal

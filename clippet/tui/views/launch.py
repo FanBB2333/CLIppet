@@ -18,6 +18,8 @@ from textual.screen import ModalScreen
 from textual.widgets import Input, Label, Static
 
 from clippet.agents import AGENTS as AGENT_SPECS
+from clippet.agents import agent_spec
+from clippet.auth.logins import login_of
 from clippet.isolation import AGENT_CONFIG_PATHS
 from clippet.tui.data import EnvView
 from clippet.tui.look import (
@@ -171,11 +173,16 @@ class Launch(ModalScreen[tuple[str, list[str]] | None]):
         if env.kind == "file":
             return Text(f"the credential file {short_path(env.path)}", style=p["ink"])
         if self.agent != "codex":
-            text = Text(f"{self.agent}'s own login in this HOME", style=p["ink"])
+            who = login_of(env.path, self.agent)
+            text = Text(who or f"{self.agent}'s own login in this HOME",
+                        style=f"bold {p['ink']}" if who else p["ink"])
             if not env.agents.get(self.agent):
                 where = AGENT_CONFIG_PATHS.get(self.agent, [])
                 text.append(f"  (no ~/{where[0]} here yet: it will ask you to log in)" if where
                             else "  (it may ask you to log in)", style=p["warn"])
+            spec = agent_spec(self.agent)
+            if who is None and not env.is_base and spec is not None and spec.keychain:
+                text.append(f"\n{spec.keychain}", style=p["faint"])
             return text
         credential = env.credential
         if credential is None:

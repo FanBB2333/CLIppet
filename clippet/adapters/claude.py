@@ -8,6 +8,7 @@ from clippet.adapters.base import BaseSubprocessAdapter, render_extra_args
 from clippet.models import AgentRequest, AgentResult
 from clippet.parsers.extractors import (
     parse_claude_json_output,
+    parse_claude_stream,
     extract_tool_calls_from_claude_json,
 )
 
@@ -34,6 +35,7 @@ class ClaudeAdapter(BaseSubprocessAdapter):
         max_budget_usd: float | None = None,
         append_system_prompt: str | None = None,
         verbose: bool = False,
+        output_format: str = "json",
     ) -> None:
         """Initialize the Claude Code adapter.
         
@@ -51,6 +53,9 @@ class ClaudeAdapter(BaseSubprocessAdapter):
             max_budget_usd: Maximum API spend in USD.
             append_system_prompt: Additional system prompt text.
             verbose: Enable verbose logging.
+            output_format: ``json`` (one result object when the run ends) or
+                ``stream-json`` (every message as it happens, then the same
+                result; Claude Code needs ``--verbose`` for it, added here).
         """
         super().__init__()
         self.model = model
@@ -61,6 +66,7 @@ class ClaudeAdapter(BaseSubprocessAdapter):
         self.max_budget_usd = max_budget_usd
         self.append_system_prompt = append_system_prompt
         self.verbose = verbose
+        self.output_format = output_format if output_format in ("json", "stream-json") else "json"
 
     @property
     def agent_name(self) -> str:
@@ -83,7 +89,7 @@ class ClaudeAdapter(BaseSubprocessAdapter):
             List of command arguments to execute.
         """
         # Start with base command
-        cmd = ["claude", "-p", "--output-format", "json"]
+        cmd = ["claude", "-p", "--output-format", self.output_format]
         
         # Add model (request.model overrides self.model if set)
         effective_model = request.model if request.model else self.model
@@ -125,8 +131,8 @@ class ClaudeAdapter(BaseSubprocessAdapter):
         if effective_append:
             cmd.extend(["--append-system-prompt", effective_append])
         
-        # Add verbose flag if enabled
-        if self.verbose:
+        # Add verbose flag if enabled (stream-json needs it)
+        if self.verbose or self.output_format == "stream-json":
             cmd.append("--verbose")
         
         # Add any extra args from request
@@ -183,6 +189,9 @@ class ClaudeAdapter(BaseSubprocessAdapter):
         Returns:
             Parsed AgentResult with extracted information.
         """
+        if self.output_format == "stream-json":
+            return self._parse_stream(raw_output, stderr, return_code)
+
         # Parse the JSON output
         parsed = parse_claude_json_output(raw_output)
         
@@ -220,4 +229,22 @@ class ClaudeAdapter(BaseSubprocessAdapter):
             output_text=result_text if isinstance(result_text, str) and is_success else None,
             usage=usage if isinstance(usage, dict) else None,
             session_id=parsed.get("session_id"),
+        )
+
+    def _parse_stream(self, raw_output: str, stderr: str, return_code: int) -> AgentResult:
+        parsed = parse_claude_stream(raw_output)
+        is_success = return_code == 0 and not parsed["is_error"]
+        error_message = None
+        if not is_success:
+            error_message = parsed["error"] if parsed["result"] is not None else None
+            error_message = error_message or stderr.strip() or parsed["error"] or f"claude exited with code {return_code}"
+        return AgentResult(
+            raw_output=raw_output,
+            is_success=is_success,
+            tool_calls=parsed["tool_calls"],
+            steps_count=parsed["num_turns"] or 0,
+            error_message=error_message,
+            output_text=parsed["answer"] if is_success else None,
+            usage=parsed["usage"],
+            session_id=parsed["session_id"],
         )

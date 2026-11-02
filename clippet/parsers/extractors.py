@@ -276,3 +276,65 @@ def _extract_tool_use_from_item(item: Any) -> list[ToolCallRecord]:
         pass
     
     return tool_calls
+
+
+def claude_usage(usage: Any, cost: Any = None) -> dict[str, Any] | None:
+    """A Claude-protocol ``usage`` with the keys CLIppet shows added (cached tokens, cost)."""
+
+    if not isinstance(usage, dict):
+        return None
+    out = dict(usage)
+    cached = usage.get("cache_read_input_tokens")
+    if isinstance(cached, (int, float)) and "cached_input_tokens" not in out:
+        out["cached_input_tokens"] = int(cached)
+    if isinstance(cost, (int, float)):
+        out["cost_usd"] = float(cost)
+    return out
+
+
+def parse_claude_stream(raw_output: str) -> dict[str, Any]:
+    """What a ``--output-format stream-json`` run said, one JSON event per line.
+
+    Claude Code speaks this protocol (``system``/``init``, ``assistant``,
+    ``user``, ``result``), and so does Qoder CLI.  The ``result`` event at the
+    end carries the answer; a run that ends without one did not finish.
+
+    Returns a dict with ``session_id``, ``answer``, ``is_error``, ``error``,
+    ``tool_calls``, ``usage``, ``num_turns`` and the ``result`` event itself.
+    """
+
+    out: dict[str, Any] = {"session_id": None, "answer": None, "is_error": False, "error": None,
+                           "tool_calls": [], "usage": None, "num_turns": 0, "result": None}
+    for line in raw_output.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(event, dict):
+            continue
+        if isinstance(event.get("session_id"), str) and event["session_id"]:
+            out["session_id"] = event["session_id"]
+        kind = event.get("type")
+        if kind == "assistant" and isinstance(event.get("message"), dict):
+            for block in event["message"].get("content") or []:
+                if isinstance(block, dict) and block.get("type") == "tool_use":
+                    arguments = block.get("input")
+                    out["tool_calls"].append(ToolCallRecord(tool_name=str(block.get("name") or "tool"),
+                                                            parameters=arguments if isinstance(arguments, dict) else {}))
+        elif kind == "result":
+            out["result"] = event
+    result = out["result"]
+    if result is None:
+        out["is_error"], out["error"] = True, "the run ended without a result"
+        return out
+    answer = result.get("result")
+    out["answer"] = answer if isinstance(answer, str) else None
+    out["num_turns"] = result.get("num_turns") or 0
+    out["usage"] = claude_usage(result.get("usage"), result.get("total_cost_usd"))
+    # an error result can say subtype "success" (a login failure, say): is_error decides
+    if result.get("is_error") or str(result.get("subtype") or "").startswith("error"):
+        out["is_error"] = True
+        errors = result.get("errors")
+        detail = "; ".join(str(e) for e in errors) if isinstance(errors, list) and errors else None
+        out["error"] = detail or out["answer"] or str(result.get("subtype") or "the agent reported an error")
+    return out
