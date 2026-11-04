@@ -182,7 +182,7 @@ env_home="$(clippet env path acct-a)"
   --env "CODEX_HOME=$env_home/.codex" \
   --env "CODEX_ELECTRON_USER_DATA_PATH=$env_home/.codex-desktop" \
   -a /Applications/ChatGPT.app \
-  /Users/l1ght/repos/CLIppet \
+  ~/repos/project \
   --args "--user-data-dir=$env_home/.codex-desktop"
 ```
 
