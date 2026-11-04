@@ -592,10 +592,11 @@ def draw_banner(letters: Lettering) -> str:
 
     # the terminal in the middle
     tx, ty, tww, th = 330, 232, 540, 168
+    where = "→ codex · CODEX_HOME = ~/.clippet/envs/work/.codex"
     _terminal(
         d, tx, ty, tww, th,
         [("$ clippet -e work codex resume --last", NIGHT_INK, 25),
-         ("→ codex · HOME = ~/.clippet/envs/work", NIGHT_MUTED, 19)],
+         (where, NIGHT_MUTED, d.fit(where, 19, tww - 56))],
         tilt=-0.6,
     )
 
@@ -661,7 +662,8 @@ def draw_how_it_works(letters: Lettering) -> str:
     stages = [
         ("Pick an identity", ["HOME env · credential file · real HOME", "Codex accounts: Cockpit, sub2api, CLIProxyAPI…"]),
         ("Build the command", ["AgentRequest → the agent's own flags", "+ every argument you passed through"]),
-        ("Set up the sandbox", ["HOME → the env, or a temp dir", "inject auth (0600) · drop CODEX_HOME, OPENAI_*…"]),
+        ("Set up the sandbox", ["CODEX_HOME (or HOME) → the env, or a temp dir",
+                                "inject auth (0600) · drop OPENAI_*, ANTHROPIC_*…"]),
         ("Run the agent", ["claude · codex · qodercli · pi · copilot · agy"]),
         ("Read the result", ["output_text · tool_calls · usage · session_id"]),
     ]
@@ -776,8 +778,8 @@ def draw_isolation(letters: Lettering) -> str:
     d.box(86, 178, 640, 236, r=16, fill="#f6ead8", width=2.2, tilt=-0.4)
     d.text("IsolatedEnvironment", 112, 216, 24, color=BRAND_DEEP)
     for i, (title, lines, tilt) in enumerate((
-        ("沙箱 HOME", ["临时目录，或持久的 env", "~/.clippet/envs/<name>"], -1.2),
-        ("凭证提供者", ["文件 · 生成的内容 · 环境变量", "写入 HOME，权限 0600"], 1.0),
+        ("沙箱目录", ["临时目录，或持久的 env", "~/.clippet/envs/<name>"], -1.2),
+        ("凭证提供者", ["文件 · 生成的内容 · 环境变量", "写入沙箱，权限 0600"], 1.0),
     )):
         x = 116 + i * 304
         d.box(x, 240, 276, 120, r=12, fill=PAPER, width=1.8, tilt=tilt)
@@ -790,16 +792,16 @@ def draw_isolation(letters: Lettering) -> str:
     d.text("subprocess(env=…, cwd=workspace)", 430, 462, 18, color=MUTED, hand=0.5)
     d.box(236, 494, 340, 84, r=14, fill=NIGHT, width=2.2, tilt=0.6)
     d.text("Agent 进程", 406, 532, 25, color=NIGHT_INK, anchor="middle")
-    d.text("$HOME 指向沙箱", 406, 562, 18, color=NIGHT_MUTED, anchor="middle")
+    d.text("CODEX_HOME 或 $HOME 指向沙箱", 406, 562, 18, color=NIGHT_MUTED, anchor="middle")
 
     d.text("结束后", 820, 470, 20, color=BRAND_DEEP, anchor="middle")
     d.text("刷新过的登录", 820, 498, 20, color=BRAND_DEEP, anchor="middle")
     d.text("写回原处", 820, 526, 20, color=BRAND_DEEP, anchor="middle")
     d.arrow([(584, 540), (700, 560), (760, 540)], color=BRAND, width=1.6, head=9, dash="1.5 6")
     d.arrow([(820, 446), (840, 360), (752, 300)], color=BRAND, width=1.6, head=10, dash="1.5 6")
-    d.text("临时 HOME 用完即删", 824, 236, 18, color=OK, anchor="middle")
+    d.text("临时目录用完即删", 824, 236, 18, color=OK, anchor="middle")
     d.text("持久 env 原样保留", 824, 262, 18, color=OK, anchor="middle")
-    return d.svg("隔离环境", "ClippetRunner 为每次运行准备隔离环境：沙箱 HOME、注入凭证、清洗环境变量，再启动 agent 进程；"
+    return d.svg("隔离环境", "ClippetRunner 为每次运行准备隔离环境：沙箱目录、注入凭证、清洗环境变量，再启动 agent 进程；"
                  "结束后把刷新过的登录写回。")
 
 
@@ -873,7 +875,7 @@ def draw_architecture(letters: Lettering) -> str:
 
     # identity, and the accounts it can draw on
     by, bh = 372, 296
-    _layer(d, L, by, 632, bh, "Identity", "which HOME and login a run uses", "config/", WARN, "#f6ebd4")
+    _layer(d, L, by, 632, bh, "Identity", "which env and login a run uses", "config/", WARN, "#f6ebd4")
     identity = [
         (".clippet.json", "project.py", ("pins an env per agent", "found from cwd up to the git root")),
         ("HOME envs", "environments.py", ("~/.clippet/envs/<name>", "create · clone · import · sync")),
@@ -929,14 +931,14 @@ def draw_architecture(letters: Lettering) -> str:
     dy0 = 1012
     _layer(d, L, dy0, R - L, 214, "Sandbox", "one per run, around the agent process", "isolation.py", OK, "#e7eee0")
     _card(d, 62, dy0 + 52, 578, 146, "IsolatedEnvironment", "", (
-        "HOME → the env (kept), or a temp dir (removed afterwards)",
+        "CODEX_HOME or HOME → the env (kept), or a temp dir (removed)",
         "drops CODEX_HOME, OPENAI_API_KEY, ANTHROPIC_* … from the parent",
         "credential providers write files (0600) and set env vars",
         "CredentialSyncBack saves refreshed logins back to their source",
     ), tilt=0.2)
     d.arrow([(646, dy0 + 125), (676, dy0 + 121), (704, dy0 + 125)], color=INK, width=2.0, head=10)
     d.text("spawns", 675, dy0 + 108, 15, color=MUTED, anchor="middle", hand=0.4)
-    d.text("agent CLIs · $HOME = the sandbox", 718, dy0 + 62, 16, color=MUTED, hand=0.5)
+    d.text("agent CLIs, pointed at the sandbox", 718, dy0 + 62, 16, color=MUTED, hand=0.5)
     for i, agent in enumerate(("Claude", "Codex", "Antigravity", "QoderCLI")):
         x = 718 + (i % 2) * 213
         y = dy0 + 74 + (i // 2) * 66
@@ -958,7 +960,7 @@ def draw_architecture(letters: Lettering) -> str:
            "protocols.py: ClippetAdapter", W / 2, 1260, 16.5, color=MUTED, anchor="middle", hand=0.4)
     return d.svg("CLIppet architecture", "The CLI, the TUI and the Python SDK pick an identity through config/ "
                  "(Codex accounts come from auth/); an adapter turns the request into the agent's command; "
-                 "isolation.py prepares the sandbox HOME the agent runs in; parsers turn its output into an AgentResult.")
+                 "isolation.py prepares the sandbox the agent runs in; parsers turn its output into an AgentResult.")
 
 
 # --- a frame for a terminal screenshot ----------------------------------------

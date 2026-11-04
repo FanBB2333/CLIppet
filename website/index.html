@@ -620,7 +620,7 @@ footer ul a:hover{color:var(--text)}
 
     <!-- storyboard: an animated walkthrough (a still frame without JS or with reduced motion) -->
     <figure class="sb sk" id="story" aria-label="Walkthrough of launching Codex in an env">
-      <figcaption class="sr-only">Walkthrough: choose the env work, run clippet -e work codex resume --last, watch CLIppet pull work's newest login, point HOME at the env and hand the terminal to Codex, then send one prompt to three envs from the terminal UI and watch the three runs finish.</figcaption>
+      <figcaption class="sr-only">Walkthrough: choose the env work, run clippet -e work codex resume --last, watch CLIppet pull work's newest login, point CODEX_HOME at the env and hand the terminal to Codex, then send one prompt to three envs from the terminal UI and watch the three runs finish.</figcaption>
       <button class="sb-ctl" type="button" aria-pressed="false" aria-label="Pause animation">
         <svg class="i-pause" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="2.5" width="2.6" height="9" rx=".8"/><rect x="8.4" y="2.5" width="2.6" height="9" rx=".8"/></svg>
         <svg class="i-play" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M4 2.6v8.8a.6.6 0 0 0 .9.5l7-4.4a.6.6 0 0 0 0-1L4.9 2.1a.6.6 0 0 0-.9.5Z"/></svg>
@@ -654,7 +654,7 @@ footer ul a:hover{color:var(--text)}
         </div>
 
         <div class="scene s-shim" data-s="shim">
-          <div class="shim-row"><span class="spin">✻</span><p class="shim">Opening work's HOME…</p></div>
+          <div class="shim-row"><span class="spin">✻</span><p class="shim">Opening env work…</p></div>
         </div>
 
         <div class="scene s-prog keep" data-s="prog">
@@ -662,8 +662,8 @@ footer ul a:hover{color:var(--text)}
             <div class="pcard-h"><span>Launch</span><code>clippet -e work codex resume --last</code></div>
             <ol class="steps">
               <li class="si done"><span class="si-m"><b>1</b><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="si-t">Pull work's newest login from Cockpit Tools</span></li>
-              <li class="si done"><span class="si-m"><b>2</b><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="si-t">Point <code>$HOME</code> at <code>~/.clippet/envs/work</code></span></li>
-              <li class="si done"><span class="si-m"><b>3</b><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="si-t">Drop <code>CODEX_HOME</code> and <code>OPENAI_API_KEY</code> from your shell</span></li>
+              <li class="si done"><span class="si-m"><b>2</b><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="si-t">Point <code>CODEX_HOME</code> at <code>~/.clippet/envs/work/.codex</code></span></li>
+              <li class="si done"><span class="si-m"><b>3</b><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="si-t">Keep your <code>$HOME</code>, drop your shell's <code>OPENAI_API_KEY</code></span></li>
               <li class="si done"><span class="si-m"><b>4</b><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="si-t">Hand the terminal to <code>codex resume --last</code></span></li>
               <li class="si done"><span class="si-m"><b>5</b><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2"><path d="m2.5 6.2 2.3 2.3 4.7-5" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="si-t">Keep any login Codex refreshes inside work</span></li>
             </ol>
@@ -739,7 +739,7 @@ footer ul a:hover{color:var(--text)}
           <div class="node sk flat">
             <div class="node-t">
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 9.5 10 3.5l7 6V16a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z" stroke-linejoin="round"/><path d="M8 17v-5h4v5" stroke-linejoin="round"/></svg>
-              work's HOME
+              ~/.clippet/envs/work
             </div>
             <div class="homes">
               <div class="home"><b>.codex/auth.json</b><span>alice · plus</span></div>
@@ -755,7 +755,7 @@ footer ul a:hover{color:var(--text)}
               The agent, unchanged
             </div>
             <div class="ags"><span><i class="ag claude"></i>claude</span><span><i class="ag codex"></i>codex</span><span><i class="ag qoder"></i>qodercli</span><span><i class="ag pi"></i>pi</span><span><i class="ag copilot"></i>copilot</span><span><i class="ag agy"></i>agy</span></div>
-            <div class="node-s">The real CLI, running with <code class="inline-code">$HOME</code> set to the env.</div>
+            <div class="node-s">The real CLI, with its config folder in the env, or the env as its <code class="inline-code">$HOME</code>.</div>
           </div>
         </div>
       </div>
@@ -789,7 +789,7 @@ footer ul a:hover{color:var(--text)}
 <span class="t-p">$ </span>clippet env import bob ./backup.json --account bob   <span class="t-c"># an export</span>
 <span class="t-p">$ </span>clippet -e work codex                           <span class="t-c"># Codex, logged in as #2</span>
 
-<span class="t-c"># or skip the env: a throw-away HOME for one run</span>
+<span class="t-c"># or skip the env: a throw-away one for one run</span>
 <span class="t-p">$ </span>clippet -c sub2api-account.json codex</code></pre>
         </div>
 
@@ -840,7 +840,7 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
         <span class="way-n">01</span>
         <div class="ico sk flat"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><path d="M6 8l2.5 2L6 12M10.5 12.5h3.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <h3>Interactive</h3>
-        <p>Hands your terminal to the agent inside the env's HOME. Everything after the agent name, apart from CLIppet's own <code>-p</code>, goes to the agent unchanged, so its own subcommands and flags keep working.</p>
+        <p>Hands your terminal to the agent, running in the env. Everything after the agent name, apart from CLIppet's own <code>-p</code>, goes to the agent unchanged, so its own subcommands and flags keep working.</p>
         <div class="entry"><div class="entry-l">Entry point</div>
 <pre><code>clippet -e work codex resume --last</code></pre></div>
       </article>
@@ -862,7 +862,7 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
     {<span class="t-s">"work"</span>: req, <span class="t-s">"personal"</span>: req})</code></pre></div>
       </article>
     </div>
-    <p class="footnote"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M8 7.2V11M8 5h.01" stroke-linecap="round"/></svg><span>No env? Point <code>-c</code> at a credential file for a throw-away HOME, or pick <code>base</code> to run in your own.</span></p>
+    <p class="footnote"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M8 7.2V11M8 5h.01" stroke-linecap="round"/></svg><span>No env? Point <code>-c</code> at a credential file for a throw-away env, or pick <code>base</code> to run in your own HOME.</span></p>
   </div>
 </section>
 
@@ -871,7 +871,7 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
   <div class="wrap">
     <span class="eyebrow">Codex accounts</span>
     <h2>Bring the accounts you already have, <span class="dim">wherever you keep them.</span></h2>
-    <p class="sec-lead">CLIppet reads Codex logins from the tools people use to manage them, turns each into Codex's own <code>auth.json</code>, and puts it in an env or a throw-away HOME. Pick one with <code>--account</code>: an index, an e-mail, a label or an account id.</p>
+    <p class="sec-lead">CLIppet reads Codex logins from the tools people use to manage them, turns each into Codex's own <code>auth.json</code>, and puts it in an env or a throw-away one. Pick one with <code>--account</code>: an index, an e-mail, a label or an account id.</p>
     <div class="fmts">
       <article class="card fmt live sk">
         <span class="tag">linked</span>
@@ -1031,10 +1031,10 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
     </figure>
     <div class="layers">
       <div class="ly start sk flat"><h3>Entry points</h3><code class="mod">cli.py · tui/ · orchestrator.py</code><p>The CLI, the TUI and the Python SDK drive the same layers.</p></div>
-      <div class="ly identity sk flat"><h3>Identity</h3><code class="mod">config/</code><p>An env, a credential file or a <code>.clippet.json</code> pin decides the HOME and the login.</p></div>
+      <div class="ly identity sk flat"><h3>Identity</h3><code class="mod">config/</code><p>An env, a credential file or a <code>.clippet.json</code> pin decides the env and the login.</p></div>
       <div class="ly accounts sk flat"><h3>Accounts</h3><code class="mod">auth/</code><p>Codex logins in any supported format become one <code>CodexCredential</code>.</p></div>
       <div class="ly adapters sk flat"><h3>Adapters</h3><code class="mod">adapters/ · parsers/</code><p>An <code>AgentRequest</code> becomes the agent's own command; its output becomes an <code>AgentResult</code>.</p></div>
-      <div class="ly sandbox sk flat"><h3>Sandbox</h3><code class="mod">isolation.py</code><p><code>$HOME</code> points at the env, identity variables are dropped, credentials are written 0600 and refreshed logins are saved.</p></div>
+      <div class="ly sandbox sk flat"><h3>Sandbox</h3><code class="mod">isolation.py</code><p>The agent's config folder (<code>CODEX_HOME</code>, …) or its <code>$HOME</code> points at the env, identity variables are dropped, credentials are written 0600 and refreshed logins are saved.</p></div>
     </div>
   </div>
 </section>
@@ -1064,7 +1064,7 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
         <div>
           <span class="step-n sk">2</span>
           <h3>Make an env</h3>
-          <p>Copy your agent configuration (not your logins) into a new HOME, then log in inside it, or import an account you already have.</p>
+          <p>Copy your agent configuration (not your logins) into a new env, then log in inside it, or import an account you already have.</p>
         </div>
         <div class="mini sk flat">
           <div class="panel-h"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>bash</span><button class="copy" type="button">Copy</button></div>
