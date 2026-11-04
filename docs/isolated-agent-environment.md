@@ -278,12 +278,14 @@ request = AgentRequest(
 
 | 范围 | 进程 `HOME` | agent 的配置与状态 | `XDG_*_HOME` | 适用 |
 |------|-------------|--------------------|--------------|------|
-| `agent` | 用户真实 HOME | 由 agent 自己的目录变量指向 env，例如 `CODEX_HOME=<env>/.codex` | 保留原值 | 声明了 `AgentSpec.config_dirs` 的 agent（目前是 Codex） |
-| `home` | env 根目录 | `<env>/.claude` 等 | 移除 | 其余 agent；也可对任何 env 显式指定 |
+| `agent` | 用户真实 HOME | 由 agent 自己的目录变量指向 env：`CODEX_HOME=<env>/.codex`、`PI_CODING_AGENT_DIR=<env>/.pi/agent`、`QODER_CONFIG_DIR=<env>/.qoder` | 保留原值 | 声明了 `AgentSpec.config_dirs` 的 agent（目前是 Codex、pi、Qoder CLI） |
+| `home` | env 根目录 | `<env>/.claude` 等 | 移除 | 其余 agent（Claude Code、Copilot CLI、Antigravity CLI）；也可对任何 env 显式指定 |
 
-- **默认值与兼容**：`isolation_scope=None` 表示 CLIppet 的默认值。对声明了配置目录变量的 agent 取 `agent`，对其余 agent 取 `home`；显式写 `agent` 的效果相同。没有这个字段的旧配置和旧 env 按默认值处理。由于两种范围下 agent 的文件都在 env 的同一位置（Codex 始终是 `<env>/.codex`），切换范围不需要搬迁任何凭据或会话。要恢复旧行为，可以用 `clippet env scope NAME home`（写入 `environments.json` 的 `isolation_scope`），或在 SDK 中用 `IsolationConfig(isolation_scope="home")`，或在组合配置的 credential profile 中写 `"isolation_scope": "home"`。
+- **默认值与兼容**：`isolation_scope=None` 表示 CLIppet 的默认值。对声明了配置目录变量的 agent 取 `agent`，对其余 agent 取 `home`；显式写 `agent` 的效果相同。没有这个字段的旧配置和旧 env 按默认值处理。由于两种范围下 agent 的文件都在 env 的同一位置（Codex 始终是 `<env>/.codex`，pi 是 `<env>/.pi/agent`，Qoder CLI 是 `<env>/.qoder`），切换范围不需要搬迁任何凭据或会话。要恢复旧行为，可以用 `clippet env scope NAME home`（写入 `environments.json` 的 `isolation_scope`），或在 SDK 中用 `IsolationConfig(isolation_scope="home")`，或在组合配置的 credential profile 中写 `"isolation_scope": "home"`。
 - **变量优先级**：从继承的环境开始。若当前进程运行在 CLIppet 启动的某次运行里，先把 `HOME` 与 `XDG_*_HOME` 恢复为用户自己的值。然后依次应用白名单、黑名单和身份变量清洗，再应用 `env_overrides`。最后写入由范围管理的变量：`HOME`、`agent` 范围下的配置目录变量，以及 `CLIPPET_HOST_*`。`env_overrides` 不能改写这些变量；`scrub_agent_env=False` 只保留继承的变量，同样不影响它们。
 - **嵌套调用**：每次运行都带上 `CLIPPET_HOST_HOME` 和 `CLIPPET_HOST_XDG_*`（即用户自己的值）。在某次运行中再启动的 `clippet` 据此找到真实的注册表（`~/.clippet`），构造下一次运行时也据此恢复用户的 HOME 与 XDG 目录，不会把上一层的 env 目录当成真实 HOME，也不修改父进程的 `os.environ`。`agent` 范围下，agent 启动的工具进程继承 `CODEX_HOME`，所以工具里再启动的 `codex` 仍使用所选 env。前提是 Codex 的 `shell_environment_policy` 没有把它过滤掉，例如 `include_only` 里不含 `CODEX_HOME` 时就会被过滤。
 - **Codex 凭据存储**：`agent` 范围下钥匙串可见，因此对 env 中的 Codex 运行总是附加 `-c cli_auth_credentials_store="file"`，让 env 里新做的登录也落在 env 的 `auth.json` 中。这只是单次运行的参数，不修改任何配置文件。即使改用钥匙串，Codex 也按 `CODEX_HOME` 规范路径的哈希区分条目（服务名 `Codex Auth`，账户 `cli|<sha256 前 16 位>`，见 openai/codex 的 `codex-rs/login/src/auth/storage.rs`），各 env 的登录仍然互不覆盖。组织通过托管配置强制的存储方式优先于该参数，CLIppet 不会绕过。
+- **配置目录以外的文件**：`agent` 范围下只有 agent 的配置目录移进 env，它在 HOME 下读的其他文件（例如 `~/.agents/skills`）来自用户真实 HOME。Qoder CLI 的使用统计（`~/.qoder-cli`）和设备 ID 缓存也留在真实 HOME；设备 ID 由机器序列号算出，两种范围下各 env 本来就相同。
+- **其余 agent 为什么仍用 `home`**：Antigravity CLI 没有对应变量；Copilot CLI 的钥匙串条目与目录无关，没有自己登录的 env 会用上钥匙串里的真实账号；Claude Code 有 `CLAUDE_CONFIG_DIR`，但要搬迁 `.claude.json` 且登录会迁入钥匙串，尚未用真实账号验证。
 - **统一入口**：交互式 CLI、`codex exec`、同步与异步 adapter、TUI 的无头运行和交互启动都经过 `create_isolated_environment()`，构造结果一致。Codex 桌面 App（`clippet/desktop.py`）本来就保留真实 HOME，只传入同一个 `<env>/.codex` 作为 `CODEX_HOME`。
 - **与沙箱权限的区别**：隔离范围只决定配置和凭据在哪里查找；agent 能读写哪些文件、能否联网，仍由 agent 自己的沙箱（例如 Codex 的 `--sandbox`）和操作系统决定，这一改动不改变任何权限策略。

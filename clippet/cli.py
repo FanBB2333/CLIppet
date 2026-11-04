@@ -248,7 +248,7 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
             "Config or credential to launch with: Claude settings JSON, Codex "
             "credential (auth.json, Cockpit Tools / sub2api / CLIProxyAPI export, "
             "token JSON), CLIppet composite config, a directory to "
-            "run in like an env (Codex: its .codex as CODEX_HOME; others: as HOME), "
+            "run in like an env (Codex, pi, Qoder CLI: their config folder in it; others: as HOME), "
             "or 'cockpit' for the Cockpit Tools account store"
         ),
     )
@@ -1228,7 +1228,8 @@ def describe_isolation_scope(requested: str | None) -> str:
         return f"{label}: every agent gets the env as HOME"
     names = ", ".join(spec.key for spec in own)
     dirs = ", ".join(f"{variable}=<env>/{rel}" for spec in own for variable, rel in spec.config_dirs.items())
-    return f"{label}: {names} keeps your HOME ({dirs}); the other agents get the env as HOME"
+    verb = "keeps" if len(own) == 1 else "keep"
+    return f"{label}: {names} {verb} your HOME ({dirs}); the other agents get the env as HOME"
 
 
 def _print_env_list(envs: dict[str, dict]) -> None:

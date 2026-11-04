@@ -80,8 +80,8 @@ class AgentSpec:
     keychain: str = ""  # when its login can live outside HOME (an OS keychain), what to tell people
     runtime: tuple[str, ...] = ()  # what its own installation needs from the real HOME, linked into envs
     run_env: dict[str, str] = field(default_factory=dict)  # set for runs in an env (not in your real HOME)
-    # The variables that move all its config and state (login included) out of
-    # HOME, each with where that lives in an env (relative to the env's root).
+    # The variables that move its config, login and sessions out of HOME, each
+    # with where that lives in an env (relative to the env's root).
     # With them a run keeps your real HOME, for git, the keychain and every
     # tool the agent starts, and only the agent itself is pointed into the env
     # (isolation scope "agent").  Without them the env stands in for HOME.
@@ -329,6 +329,10 @@ _SPECS: tuple[AgentSpec, ...] = (
         ),
         resume=("-r", "{id}"),
         login="/login",
+        # QODER_CONFIG_DIR moves ~/.qoder (settings, login, sessions).  Usage
+        # stats (~/.qoder-cli) and the device-ID cache stay in HOME; the device
+        # ID comes from the machine's serial number either way.
+        config_dirs={"QODER_CONFIG_DIR": ".qoder"},
         endpoint=EndpointSpec(
             note=(
                 "Qoder CLI takes custom models (BYOK, also with a custom URL) only from the Custom tab of "
@@ -437,6 +441,9 @@ _SPECS += (
         # The launcher of pi's own installer looks for the Node.js it installed
         # under $HOME/.local/share/pi-node.
         runtime=(".local/share/pi-node",),
+        # settings, auth.json, models.json and sessions all live in the agent
+        # directory, which PI_CODING_AGENT_DIR moves
+        config_dirs={"PI_CODING_AGENT_DIR": ".pi/agent"},
         endpoint=EndpointSpec(
             apis={"openai": {}, "openai-responses": {}, "anthropic": {}, "gemini": {}},
             file="pi",

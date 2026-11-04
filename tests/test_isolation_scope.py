@@ -166,10 +166,11 @@ def test_the_home_scope_still_makes_the_env_your_home(own: Path, tmp_path: Path)
 
 
 def test_agents_without_a_config_directory_variable_keep_the_home_scope() -> None:
-    assert effective_scope(None, "codex") == "agent"
-    assert effective_scope("agent", "codex") == "agent"
-    assert effective_scope("home", "codex") == "home"
-    for agent in ("claude", "qodercli", "pi", "copilot", "agy", None):
+    for agent in ("codex", "qodercli", "pi"):
+        assert effective_scope(None, agent) == "agent"
+        assert effective_scope("agent", agent) == "agent"
+        assert effective_scope("home", agent) == "home"
+    for agent in ("claude", "copilot", "agy", None):
         assert effective_scope(None, agent) == "home"
         assert effective_scope("agent", agent) == "home"
     with pytest.raises(ValueError, match="unknown isolation scope"):
@@ -331,7 +332,10 @@ def test_the_scope_is_kept_per_env_and_shown(own: Path, monkeypatch: pytest.Monk
         cli.main()
         return capsys.readouterr().out
 
-    assert "agent (default): codex keeps your HOME (CODEX_HOME=<env>/.codex)" in clippet("env", "scope", "work")
+    assert (
+        "agent (default): codex, qodercli, pi keep your HOME (CODEX_HOME=<env>/.codex, "
+        "QODER_CONFIG_DIR=<env>/.qoder, PI_CODING_AGENT_DIR=<env>/.pi/agent); the other agents get the env as HOME"
+    ) in clippet("env", "scope", "work")
     assert "home: every agent gets the env as HOME" in clippet("env", "scope", "work", "home")
     assert get_environment("work")["isolation_scope"] == "home"
     assert "isolation   : home" in clippet("env", "status", "work")

@@ -112,6 +112,35 @@ def test_env_launch_in_home_scope_replaces_home(clippet_root, tty, monkeypatch) 
     assert "CODEX_HOME" not in env
 
 
+@pytest.mark.parametrize(("agent", "variable", "folder"), [
+    ("pi", "PI_CODING_AGENT_DIR", ".pi/agent"),
+    ("qodercli", "QODER_CONFIG_DIR", ".qoder"),
+])
+def test_pi_and_qoder_keep_your_home_too(clippet_root, tty, tmp_path, monkeypatch, agent, variable, folder) -> None:
+    home = create_home_env("work", share=[])
+    own = tmp_path / "own-home"
+    own.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: own))
+    monkeypatch.setenv(variable, "/real/config")
+    monkeypatch.setattr(sys, "argv", ["clippet", "-e", "work", agent])
+
+    with patch("clippet.cli.subprocess.run") as run:
+        run.return_value = MagicMock(returncode=0)
+        main()
+    env = run.call_args.kwargs["env"]
+    assert env["HOME"] == str(own)
+    assert env[variable] == str(home.resolve() / folder)
+    assert (home / folder).is_dir()
+
+    set_env_isolation_scope("work", "home")
+    with patch("clippet.cli.subprocess.run") as run:
+        run.return_value = MagicMock(returncode=0)
+        main()
+    env = run.call_args.kwargs["env"]
+    assert env["HOME"] == str(home.resolve())
+    assert variable not in env
+
+
 def test_passthrough_does_not_consume_stdin(clippet_root, monkeypatch) -> None:
     _home_env_with_login()
     stdin = io.StringIO("sk-secret-from-file")

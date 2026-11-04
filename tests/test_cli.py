@@ -776,9 +776,9 @@ class TestInteractiveHomePicker:
             main()
 
         assert mock_run.called
-        # The subprocess env should have HOME pointing at the selected env's home dir
+        # Qoder CLI keeps your HOME; its config folder is the selected env's .qoder
         env_kwarg = mock_run.call_args.kwargs.get("env") or {}
-        assert env_kwarg.get("HOME") == str(first_env_home.resolve())
+        assert env_kwarg.get("QODER_CONFIG_DIR") == str(first_env_home.resolve() / ".qoder")
 
     def test_picker_quit_exits_cleanly(
         self,
