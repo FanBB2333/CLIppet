@@ -162,15 +162,15 @@ def test_headless_passthrough_lands_before_prompt(clippet_root, tty, monkeypatch
     assert capsys.readouterr().out.strip() == "hi!"
 
 
-def test_gemini_env_file_config_works(tmp_path, tty, monkeypatch) -> None:
-    """Regression: '-c gemini.env' used to fail with 'Unsupported native config type'."""
+def test_env_files_are_refused_with_a_reason(tmp_path, tty, monkeypatch, capsys) -> None:
+    """A .env file was a Gemini CLI config; it is refused, not misread."""
     cfg = tmp_path / "gemini.env"
-    cfg.write_text("GEMINI_API_KEY=k\nGEMINI_MODEL=gemini-x\n")
-    monkeypatch.setattr(sys, "argv", ["clippet", "-c", str(cfg), "--", "--yolo"])
-    with patch("clippet.cli.subprocess.run") as run:
-        run.return_value = MagicMock(returncode=0)
+    cfg.write_text("GEMINI_API_KEY=k\n")
+    monkeypatch.setattr(sys, "argv", ["clippet", "-c", str(cfg)])
+    with patch("clippet.cli.subprocess.run") as run, pytest.raises(SystemExit):
         main()
-    assert run.call_args[0][0] == ["gemini", "-m", "gemini-x", "--yolo"]
+    run.assert_not_called()
+    assert "Gemini CLI is no longer supported" in capsys.readouterr().err
 
 
 def test_missing_env_home_dir_is_an_error(clippet_root, tty, monkeypatch, capsys) -> None:
@@ -323,7 +323,7 @@ def test_project_config_can_pin_env(clippet_root, tmp_path, tty, monkeypatch) ->
     repo = tmp_path / "repo"
     (repo / ".git").mkdir(parents=True)
     (repo / ".clippet.json").write_text(json.dumps(
-        {"version": 1, "agents": {"codex": {"env": "work"}, "gemini": {"env": "work"}}}
+        {"version": 1, "agents": {"codex": {"env": "work"}, "agy": {"env": "work"}}}
     ))
     monkeypatch.chdir(repo)
     launch = resolve_project_launch(repo, "codex")

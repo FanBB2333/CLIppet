@@ -570,7 +570,7 @@ def create_home_env(
             HOME (settings, config.toml, MCP config, skills, prompts, ...).
             Runtime state (sessions, logs, caches, sockets) is never copied.
         agents: Restrict seeding to a subset of agents (``"claude"``, ``"codex"``,
-            ``"gemini"``, ``"qodercli"``). Ignored when ``from_current`` is False.
+            ``"qodercli"``, ...). Ignored when ``from_current`` is False.
             Default seeds all.
         with_auth: Also copy credential files (``.codex/auth.json``, ...).  The
             copy shares OAuth refresh tokens with the source HOME; prefer

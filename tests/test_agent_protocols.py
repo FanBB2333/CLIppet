@@ -300,13 +300,11 @@ class TestLogins:
         (tmp_path / ".pi" / "agent" / "auth.json").write_text(json.dumps(
             {"openai": {"type": "api_key", "key": "sk-y"}, "anthropic": {"type": "oauth"}}))
         (tmp_path / ".gemini" / "antigravity-cli").mkdir(parents=True)
-        (tmp_path / ".gemini" / "google_accounts.json").write_text(json.dumps({"active": "carol@example.com"}))
         (tmp_path / ".gemini" / "antigravity-cli" / "antigravity-oauth-token").write_text("t")
 
         assert login_of(tmp_path, "claude") == "alice@example.com (Acme)"
         assert login_of(tmp_path, "copilot") == "bob"
         assert login_of(tmp_path, "pi") == "logged in to anthropic, openai"
-        assert login_of(tmp_path, "gemini") == "carol@example.com"
         assert login_of(tmp_path, "agy") == "signed in"
         assert login_of(tmp_path, "qodercli") is None
 

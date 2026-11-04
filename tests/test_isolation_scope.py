@@ -169,7 +169,7 @@ def test_agents_without_a_config_directory_variable_keep_the_home_scope() -> Non
     assert effective_scope(None, "codex") == "agent"
     assert effective_scope("agent", "codex") == "agent"
     assert effective_scope("home", "codex") == "home"
-    for agent in ("claude", "gemini", "qodercli", "pi", "copilot", "agy", None):
+    for agent in ("claude", "qodercli", "pi", "copilot", "agy", None):
         assert effective_scope(None, agent) == "home"
         assert effective_scope("agent", agent) == "home"
     with pytest.raises(ValueError, match="unknown isolation scope"):

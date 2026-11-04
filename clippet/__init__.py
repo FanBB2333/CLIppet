@@ -4,7 +4,6 @@ from clippet.adapters import BaseAdapter, BaseSubprocessAdapter
 from clippet.adapters import (
     ClaudeAdapter,
     CodexAdapter,
-    GeminiAdapter,
     QoderAdapter,
     QoderCLIAdapter,
 )
@@ -103,7 +102,6 @@ __all__ = [
     # Adapters
     "ClaudeAdapter",
     "CodexAdapter",
-    "GeminiAdapter",
     "QoderAdapter",
     "QoderCLIAdapter",
     # Orchestrator

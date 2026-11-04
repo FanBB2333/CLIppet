@@ -264,50 +264,6 @@ _SPECS: tuple[AgentSpec, ...] = (
         examples="e.g. --continue   or   --model sonnet",
     ),
     AgentSpec(
-        key="gemini",
-        title="Gemini CLI",
-        binary="gemini",
-        install="npm i -g @google/gemini-cli",
-        docs="https://github.com/google-gemini/gemini-cli",
-        adapter="clippet.adapters.gemini:GeminiAdapter",
-        config_paths=(".gemini",),
-        seed=SeedSpec(
-            entries=(
-                ".gemini/settings.json",
-                ".gemini/GEMINI.md",
-                ".gemini/commands",
-                ".gemini/extensions",
-            ),
-            credentials=(
-                ".gemini/.env",
-                ".gemini/oauth_creds.json",
-                ".gemini/google_accounts.json",
-            ),
-        ),
-        identity_env=(
-            "GEMINI_CLI_HOME",
-            "GEMINI_API_KEY",
-            "GEMINI_MODEL",
-            "GOOGLE_API_KEY",
-            "GOOGLE_GEMINI_BASE_URL",
-            "GOOGLE_APPLICATION_CREDENTIALS",
-            "GOOGLE_CLOUD_PROJECT",
-            "GOOGLE_CLOUD_LOCATION",
-            "GOOGLE_GENAI_USE_VERTEXAI",
-        ),
-        login="/auth",
-        endpoint=EndpointSpec(
-            apis={"gemini": {}},
-            base_url="GOOGLE_GEMINI_BASE_URL",
-            key=("GEMINI_API_KEY",),
-            model="GEMINI_MODEL",
-            note="Gemini CLI uses GEMINI_API_KEY once /auth (or settings.json) selects \"Use Gemini API key\".",
-        ),
-        letter="G",
-        color="brand",
-        examples="e.g. -m gemini-2.5-pro",
-    ),
-    AgentSpec(
         key="qodercli",
         title="Qoder CLI",
         binary="qodercli",
@@ -585,8 +541,8 @@ _SPECS += (
         docs="https://antigravity.google/docs/cli/reference/",
         adapter="clippet.adapters.antigravity:AntigravityAdapter",
         config_paths=(".gemini/antigravity-cli",),
-        # ~/.gemini/config is shared with the Antigravity app; GEMINI.md,
-        # AGENTS.md and skills with Gemini CLI.
+        # ~/.gemini/config is shared with the Antigravity app; agy also reads
+        # the GEMINI.md, AGENTS.md and skills/ that Gemini CLI kept in ~/.gemini.
         seed=SeedSpec(
             entries=(
                 ".gemini/antigravity-cli/settings.json",
@@ -661,6 +617,6 @@ def agent_spec(name: str | None) -> AgentSpec | None:
 
 
 def agent_list(separator: str = ", ") -> str:
-    """The agent keys, for messages: ``codex, claude, gemini, …``."""
+    """The agent keys, for messages: ``codex, claude, qodercli, …``."""
 
     return separator.join(AGENT_KEYS)

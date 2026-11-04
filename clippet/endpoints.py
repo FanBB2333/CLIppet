@@ -303,8 +303,6 @@ def endpoint_of(home_dir: Path | str, agent: str, variables: Mapping[str, str] |
         return _pi_endpoint(home, variables)
     if spec.key == "copilot":
         return _copilot_endpoint(home)
-    if spec.key == "gemini":
-        return _from_dotenv(home / ".gemini" / ".env", endpoint)
     return None
 
 
@@ -325,23 +323,6 @@ def _from_env_block(path: Path, endpoint: EndpointSpec, source: str) -> Endpoint
     key = next((f"{name} in {source}" for name in endpoint.key if block.get(name)), None)
     return Endpoint(url=str(block[endpoint.base_url]), key=key,
                     model=str(block.get(endpoint.model) or "") or None, source=source)
-
-
-def _from_dotenv(path: Path, endpoint: EndpointSpec) -> Endpoint | None:
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError):
-        return None
-    values: dict[str, str] = {}
-    for line in lines:
-        name, sep, value = line.strip().removeprefix("export ").partition("=")
-        if sep:
-            values[name.strip()] = value.strip().strip("'\"")
-    if not values.get(endpoint.base_url):
-        return None
-    key = next((f"{name} in .gemini/.env" for name in endpoint.key if values.get(name)), None)
-    return Endpoint(url=values[endpoint.base_url], key=key, model=values.get(endpoint.model) or None,
-                    source=".gemini/.env")
 
 
 def _codex_endpoint(home: Path, variables: Mapping[str, str]) -> Endpoint | None:

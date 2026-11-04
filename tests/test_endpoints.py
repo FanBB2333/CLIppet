@@ -244,7 +244,7 @@ class TestEndpoints:
         assert (claude.url, claude.key) == ("https://glm.example.com/anthropic", "ANTHROPIC_AUTH_TOKEN in .claude/settings.json")
         assert KEY not in repr(claude)
         assert (copilot.url, copilot.key) == ("http://127.0.0.1:11434/v1", None)
-        assert endpoint_of(home, "gemini") is None
+        assert endpoint_of(home, "agy") is None
 
 
 class TestCodexApiKeyLogins:

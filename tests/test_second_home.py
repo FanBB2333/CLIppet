@@ -393,10 +393,6 @@ class TestAgentConfigPaths:
         assert "codex" in AGENT_CONFIG_PATHS
         assert ".codex" in AGENT_CONFIG_PATHS["codex"]
 
-    def test_gemini_paths(self):
-        assert "gemini" in AGENT_CONFIG_PATHS
-        assert ".gemini" in AGENT_CONFIG_PATHS["gemini"]
-
     def test_opencode_paths(self):
         assert "opencode" in AGENT_CONFIG_PATHS
         assert ".config/opencode" in AGENT_CONFIG_PATHS["opencode"]

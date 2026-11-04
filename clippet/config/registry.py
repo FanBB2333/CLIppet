@@ -50,7 +50,7 @@ class AdapterConfig(BaseModel):
 
     Attributes:
         adapter_type: The agent CLI, a key of :data:`clippet.agents.AGENTS`
-            ("codex", "claude", "gemini", "qodercli", ...).
+            ("codex", "claude", "qodercli", "agy", ...).
         name: Registration name for the adapter in the runner.
         options: Adapter constructor kwargs (model, etc.).
     """

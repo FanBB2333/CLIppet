@@ -2,7 +2,7 @@
 
 This module provides functions to discover, load, and resolve project-level
 configuration files that allow running `clippet codex`, `clippet claude`,
-`clippet gemini` or `clippet qodercli` directly inside a project directory —
+`clippet qodercli` or any other agent directly inside a project directory —
 either with project-local credential files or by pinning a named HOME env
 (``{"agents": {"codex": {"env": "work"}}}``) so the project always runs under
 the right account.

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CLIppet: every coding agent CLI, as the account you choose</title>
-<meta name="description" content="CLIppet runs Claude Code, Codex, Gemini CLI and QoderCLI inside HOME environments that each keep their own login, so several agents and accounts can work side by side, from the terminal, a TUI or Python.">
+<meta name="description" content="CLIppet runs Claude Code, Codex, QoderCLI, pi, Copilot CLI and Antigravity CLI inside HOME environments that each keep their own login, so several agents and accounts can work side by side, from the terminal, a TUI or Python.">
 <meta name="theme-color" content="#f4eee2">
 <link rel="icon" type="image/svg+xml" href="../resources/logo.svg">
 <script>
@@ -53,7 +53,7 @@
   --syn-str:#4a6e3e; --syn-num:#2f6496;
   --night:#2b241e; --night-ink:#ece2d3; --night-sub:#b3a38c;
   --mk-ink:#2f261d; --mk-paper:#fcf8f0; --mk-wash:#eadcc3; --mk-brand:#c2663f;
-  --a-claude:#6c4f91; --a-codex:#4a6e3e; --a-gemini:#a14e2b; --a-qoder:#2f6496;
+  --a-claude:#6c4f91; --a-codex:#4a6e3e; --a-qoder:#2f6496; --a-pi:#8e455f; --a-copilot:#296e63; --a-agy:#785f1b;
   --nav-bg:rgba(244,238,226,.86);
   --float-bg:rgba(252,248,240,.94);
   --hover:rgba(74,52,32,.06);
@@ -90,7 +90,7 @@
   --syn-str:#9cc489; --syn-num:#8db8e2;
   --night:#110e0b; --night-ink:#ece2d3; --night-sub:#a3927b;
   --mk-ink:#ece2d3; --mk-paper:#24201b; --mk-wash:#3b3129; --mk-brand:#d9804f;
-  --a-claude:#c0a8e0; --a-codex:#9cc489; --a-gemini:#e0905f; --a-qoder:#8db8e2;
+  --a-claude:#c0a8e0; --a-codex:#9cc489; --a-qoder:#8db8e2; --a-pi:#df9cb3; --a-copilot:#85c9ba; --a-agy:#dfc374;
   --nav-bg:rgba(27,23,20,.86);
   --float-bg:rgba(36,32,27,.94);
   --hover:rgba(255,240,225,.06);
@@ -234,7 +234,7 @@ h1 .g{color:var(--accent-fill)}
 .sb.anim .pchip{opacity:0;transform:translateY(8px)}
 .sb.anim .pchip.in{opacity:1;transform:none}
 .ag{width:9px;height:9px;flex:none;border-radius:50%;background:var(--c,var(--border-strong))}
-.ag.claude{--c:var(--a-claude)}.ag.codex{--c:var(--a-codex)}.ag.gemini{--c:var(--a-gemini)}.ag.qoder{--c:var(--a-qoder)}
+.ag.claude{--c:var(--a-claude)}.ag.codex{--c:var(--a-codex)}.ag.qoder{--c:var(--a-qoder)}.ag.pi{--c:var(--a-pi)}.ag.copilot{--c:var(--a-copilot)}.ag.agy{--c:var(--a-agy)}
 .prompt{margin-top:16px;border-radius:16px;transition:opacity .5s ease,transform .6s cubic-bezier(.2,.7,.2,1)}
 .sb.anim .prompt{opacity:0;transform:translateY(10px)}
 .sb.anim .prompt.in{opacity:1;transform:none}
@@ -602,7 +602,7 @@ footer ul a:hover{color:var(--text)}
     <div class="hero-copy">
       <a class="pill sk" href="#accounts"><span class="dot">6</span>Codex account formats, from Cockpit Tools to CLIProxyAPI <span class="arr" aria-hidden="true">→</span></a>
       <h1><svg class="mk" viewBox="0 0 64 64" aria-hidden="true"><use href="#mark"/></svg><span class="word"><span class="w">CLI</span><span class="g">ppet</span></span></h1>
-      <p class="tagline">Run Claude Code, Codex, Gemini CLI and QoderCLI as whichever account you choose: interactively, headless, or side by side.</p>
+      <p class="tagline">Run Claude Code, Codex, QoderCLI, pi, Copilot CLI and Antigravity CLI as whichever account you choose: interactively, headless, or side by side.</p>
       <p class="lead">CLIppet gives every run its own identity. An env is a real HOME directory with its own login, sessions and history, so switching accounts means switching envs instead of logging out. Bring the Codex accounts you already keep in Cockpit Tools, sub2api or CLIProxyAPI, pass any flag through to the agent, and drive it all from the terminal, a TUI or Python.</p>
       <div class="ctas">
         <a class="btn btn-primary sk" href="#quick-start">Get started <span class="k" aria-hidden="true">→</span></a>
@@ -614,7 +614,7 @@ footer ul a:hover{color:var(--text)}
       <ul class="facts-row" aria-label="Project facts">
         <li><a href="https://github.com/FanBB2333/CLIppet/blob/main/LICENSE"><svg class="fr-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 20h10M6 6l6-1 6 1M12 3v17M9 12 6 6l-3 6a3 3 0 0 0 6 0M21 12l-3-6-3 6a3 3 0 0 0 6 0"/></svg><span class="fr-t"><b>MIT</b><small>License</small></span></a></li>
         <li><span class="fr-c"><svg class="fr-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9H5a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h3M12 15h7a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3M8 9V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-4M11 6v.01M13 18v.01"/></svg><span class="fr-t"><b>3.10+</b><small>Python</small></span></span></li>
-        <li><span class="fr-c"><svg class="fr-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 8.5h18M7 12.5l2.5 2-2.5 2M12 16.5h4"/></svg><span class="fr-t"><b>4 agent CLIs</b><small>Claude Code · Codex · Gemini · Qoder</small></span></span></li>
+        <li><span class="fr-c"><svg class="fr-i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 8.5h18M7 12.5l2.5 2-2.5 2M12 16.5h4"/></svg><span class="fr-t"><b>6 agent CLIs</b><small>Claude Code · Codex · Qoder · pi · Copilot · Antigravity</small></span></span></li>
       </ul>
     </div>
 
@@ -754,7 +754,7 @@ footer ul a:hover{color:var(--text)}
               <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="1.5"/><rect x="8" y="8" width="4" height="4" rx=".6"/><path d="M8 2.5V5M12 2.5V5M8 15v2.5M12 15v2.5M2.5 8H5M2.5 12H5M15 8h2.5M15 12h2.5" stroke-linecap="round"/></svg>
               The agent, unchanged
             </div>
-            <div class="ags"><span><i class="ag claude"></i>claude</span><span><i class="ag codex"></i>codex</span><span><i class="ag gemini"></i>gemini</span><span><i class="ag qoder"></i>qodercli</span></div>
+            <div class="ags"><span><i class="ag claude"></i>claude</span><span><i class="ag codex"></i>codex</span><span><i class="ag qoder"></i>qodercli</span><span><i class="ag pi"></i>pi</span><span><i class="ag copilot"></i>copilot</span><span><i class="ag agy"></i>agy</span></div>
             <div class="node-s">The real CLI, running with <code class="inline-code">$HOME</code> set to the env.</div>
           </div>
         </div>
@@ -822,7 +822,7 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
     </div>
 
     <div class="facts sk">
-      <div class="fact"><div class="fact-n">4</div><div class="fact-l">agent CLIs: Claude Code, Codex, Gemini CLI, QoderCLI</div></div>
+      <div class="fact"><div class="fact-n">6</div><div class="fact-l">agent CLIs: Claude Code, Codex, QoderCLI, pi, Copilot CLI, Antigravity CLI</div></div>
       <div class="fact"><div class="fact-n">6</div><div class="fact-l">Codex account formats it can read</div></div>
       <div class="fact"><div class="fact-n">1</div><div class="fact-l">HOME per env, with its own login</div></div>
       <div class="fact"><div class="fact-n">5</div><div class="fact-l">places in the terminal UI</div></div>
@@ -1056,7 +1056,7 @@ results = runner.<span class="t-f">execute_parallel</span>({<span class="t-s">"w
             <div class="panel-h"><span class="lights" aria-hidden="true"><i></i><i></i><i></i></span><span>bash</span><button class="copy" type="button">Copy</button></div>
 <pre><code>pip install <span class="t-s">"clippet[tui,cockpit] @ git+https://github.com/FanBB2333/CLIppet.git"</span></code></pre>
           </div>
-          <div class="req" style="margin-top:14px"><span class="chip">Python 3.10+</span><span class="chip">Claude Code</span><span class="chip">Codex</span><span class="chip">Gemini CLI</span><span class="chip">QoderCLI</span></div>
+          <div class="req" style="margin-top:14px"><span class="chip">Python 3.10+</span><span class="chip">Claude Code</span><span class="chip">Codex</span><span class="chip">QoderCLI</span><span class="chip">pi</span><span class="chip">Copilot CLI</span><span class="chip">Antigravity CLI</span></div>
           <p class="req-note">Install only the agents you want to run; CLIppet starts the CLIs you already have.</p>
         </div>
       </div>
@@ -1110,7 +1110,7 @@ clippet</code></pre>
           <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>The agent still runs as you, so it can read files outside its workspace and outside its env.</span></li>
           <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>Credential stores keyed by absolute paths, such as the macOS Keychain, are only as separate as each agent makes them.</span></li>
           <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>A login copied into two envs breaks one of them when its refresh token rotates. Log in inside each env, or link envs to the account manager.</span></li>
-          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>Importing accounts from other tools works for Codex only. Claude Code and Gemini CLI log in inside an env or take their own settings file with <code>-c</code>; QoderCLI logs in inside an env.</span></li>
+          <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>Importing accounts from other tools works for Codex only. Claude Code logs in inside an env or takes its own settings file with <code>-c</code>; the other agents log in inside an env.</span></li>
           <li><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 8h8" stroke-linecap="round"/></svg><span>Headless runs print the final answer; for Codex and Claude Code, tool calls, usage and session ids come back through the Python SDK.</span></li>
         </ul>
         <a class="arrow-link" href="https://github.com/FanBB2333/CLIppet#34-how-isolation-works-and-its-limits">How isolation works, and its limits <span aria-hidden="true">→</span></a>

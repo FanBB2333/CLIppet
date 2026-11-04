@@ -2,7 +2,7 @@
 
 Supports these input types for ``-c``:
 1. A CLIppet composite JSON/YAML file (has ``adapters`` list).
-2. A native agent config file (Claude Code JSON or Gemini .env).
+2. A Claude Code settings JSON file (with an ``env`` block).
 3. A Codex credential in any format understood by :mod:`clippet.auth.codex`
    (Codex ``auth.json``, Cockpit Tools export, sub2api export, CLIProxyAPI
    token file, plain token bundle, JSON arrays / JSON Lines of those).
@@ -24,7 +24,6 @@ from pydantic import SecretStr
 from clippet.adapters.base import BaseAdapter, BaseSubprocessAdapter
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.adapters.codex import CodexAdapter
-from clippet.adapters.gemini import GeminiAdapter, parse_gemini_env_file
 from clippet.agents import agent_list, agent_spec
 from clippet.auth.codex import (
     AUTH_MODE_APIKEY,
@@ -45,9 +44,6 @@ CODEX_FILE_STORE_OVERRIDE = ("cli_auth_credentials_store", '"file"')
 
 _CLAUDE_CODE_KEYS = {"effortLevel", "skipDangerousModePermissionPrompt", "permissions"}
 
-# Keys that indicate a Gemini .env configuration
-_GEMINI_ENV_KEYS = {"GEMINI_API_KEY", "GOOGLE_GEMINI_BASE_URL", "GEMINI_MODEL"}
-
 
 # ---------------------------------------------------------------------------
 # Config type detection
@@ -56,15 +52,15 @@ _GEMINI_ENV_KEYS = {"GEMINI_API_KEY", "GOOGLE_GEMINI_BASE_URL", "GEMINI_MODEL"}
 
 def detect_config_type(
     path: Path | str,
-) -> Literal["claude_code", "codex", "gemini", "clippet", "second_home"]:
+) -> Literal["claude_code", "codex", "clippet", "second_home"]:
     """Detect the format of a configuration file **or directory**.
 
     Args:
-        path: Path to a JSON config file, .env file, **or** a directory to use
-            as second home.
+        path: Path to a JSON config or credential file, **or** a directory to
+            use as second home.
 
     Returns:
-        One of ``"clippet"``, ``"claude_code"``, ``"codex"``, ``"gemini"``, or
+        One of ``"clippet"``, ``"claude_code"``, ``"codex"`` or
         ``"second_home"``.
 
     Raises:
@@ -83,15 +79,11 @@ def detect_config_type(
             return "codex"
         return "second_home"
 
-    # --- Check for .env file (Gemini format) -------------------------------
+    # --- .env files were Gemini CLI's, which CLIppet no longer runs ---------
     if path.suffix == ".env" or path.name == ".env":
-        content = path.read_text(encoding="utf-8")
-        env_map = parse_gemini_env_file(content)
-        if _GEMINI_ENV_KEYS & set(env_map.keys()):
-            return "gemini"
         raise ValueError(
-            f"Unrecognizable .env format in '{path}'. "
-            "Expected Gemini config with GEMINI_API_KEY or GOOGLE_GEMINI_BASE_URL."
+            f"'{path}' is a .env file, which CLIppet does not read "
+            "(Gemini CLI is no longer supported)."
         )
 
     # --- Try to parse as JSON ----------------------------------------------
@@ -99,12 +91,8 @@ def detect_config_type(
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except json.JSONDecodeError:
-        # Not valid JSON - might be a non-.env file with Gemini config
+        # Not one JSON value: maybe a JSON Lines file of Codex credentials
         content = path.read_text(encoding="utf-8")
-        env_map = parse_gemini_env_file(content)
-        if _GEMINI_ENV_KEYS & set(env_map.keys()):
-            return "gemini"
-        # ... or a JSON Lines file of Codex credentials
         try:
             if extract_codex_credentials(_parse_text(content)):
                 return "codex"
@@ -126,12 +114,8 @@ def detect_config_type(
 
     # Claude Code format: env dict with ANTHROPIC_* keys, or known top-level keys
     env = data.get("env")
-    if isinstance(env, dict):
-        if any(key.startswith("ANTHROPIC_") for key in env):
-            return "claude_code"
-        # Check for Gemini keys in JSON env format
-        if _GEMINI_ENV_KEYS & set(env.keys()):
-            return "gemini"
+    if isinstance(env, dict) and any(key.startswith("ANTHROPIC_") for key in env):
+        return "claude_code"
 
     if _CLAUDE_CODE_KEYS & data.keys():
         return "claude_code"
@@ -145,9 +129,8 @@ def detect_config_type(
         f"Unrecognizable config format in '{path}'. "
         "Expected a CLIppet composite config (with 'adapters' list), "
         "a Claude Code config (with 'env' containing ANTHROPIC_* keys), "
-        "a Codex credential (auth.json, Cockpit Tools / sub2api / CLIProxyAPI "
-        "export, or a token bundle), "
-        "or a Gemini config (.env with GEMINI_API_KEY)."
+        "or a Codex credential (auth.json, Cockpit Tools / sub2api / CLIProxyAPI "
+        "export, or a token bundle)."
     )
 
 
@@ -383,47 +366,6 @@ def create_adapter_from_codex_config(
     return adapter
 
 
-def create_adapter_from_gemini_config(
-    config_path: Path | str,
-    **adapter_kwargs,
-) -> GeminiAdapter:
-    """Create a :class:`GeminiAdapter` from a Gemini .env config file.
-
-    The function reads environment variables from the .env file and wires
-    them into an :class:`IsolationConfig` so they are available inside the
-    sandbox at runtime.
-
-    Args:
-        config_path: Path to the Gemini .env config file.
-        **adapter_kwargs: Extra keyword arguments forwarded to
-            :class:`GeminiAdapter`.
-
-    Returns:
-        A configured :class:`GeminiAdapter` instance.
-    """
-
-    config_path = Path(config_path).resolve()
-    content = config_path.read_text(encoding="utf-8")
-    env_vars = parse_gemini_env_file(content)
-
-    isolation = IsolationConfig(
-        credential_files={
-            ".gemini/.env": str(config_path),
-        },
-        env_overrides=dict(env_vars),
-    )
-
-    # Infer model from env vars when not explicitly provided
-    if "model" not in adapter_kwargs:
-        model = env_vars.get("GEMINI_MODEL")
-        if model:
-            adapter_kwargs["model"] = model
-
-    adapter = GeminiAdapter(**adapter_kwargs)
-    adapter.default_isolation = isolation
-    return adapter
-
-
 # ---------------------------------------------------------------------------
 # Adapter factory — second-home mode
 # ---------------------------------------------------------------------------
@@ -441,7 +383,7 @@ def create_adapter_with_second_home(
     config directory inside it (``CODEX_HOME=<dir>/.codex``, isolation scope
     ``agent``) or the whole ``$HOME`` (scope ``home``).  It should already
     contain the appropriate agent config hierarchy (e.g. ``.claude/``,
-    ``.codex/``, ``.gemini/``, ``.qoder/``).
+    ``.codex/``, ``.qoder/``).
 
     Args:
         home_dir: Path to the second-home directory.
@@ -515,13 +457,13 @@ def create_adapter_from_config_file(
     factory function.
 
     Args:
-        config_path: Path to the JSON configuration file, .env file, **or** a
-            directory to use as second home.  May be *None* when
+        config_path: Path to the JSON configuration or credential file, **or**
+            a directory to use as second home.  May be *None* when
             *codex_config_path* is provided (auth.json will be read from
             ``~/.codex/``).
-        agent_type: Explicit agent type override (``"claude_code"``,
-            ``"codex"``, or ``"gemini"``).  When *None*, the type is inferred
-            from the file contents.
+        agent_type: Explicit agent type override (``"claude_code"`` or
+            ``"codex"``).  When *None*, the type is inferred from the file
+            contents.
         codex_config_path: Optional path to a Codex ``config.toml`` file.
             When provided together with a Codex *config_path* (or on its
             own), both files are wired into the sandbox.
@@ -594,10 +536,7 @@ def create_adapter_from_config_file(
             account=account,
         )
 
-    if effective_type == "gemini":
-        return create_adapter_from_gemini_config(config_path)
-
     raise ValueError(
         f"Unknown agent type: '{effective_type}'. "
-        "Supported types are: 'claude_code', 'codex', 'gemini'."
+        "Supported types are: 'claude_code', 'codex'."
     )

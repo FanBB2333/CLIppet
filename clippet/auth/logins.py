@@ -52,13 +52,6 @@ def _copilot(home: Path) -> str | None:
     return None
 
 
-def _gemini(home: Path) -> str | None:
-    data = _json(home / ".gemini" / "google_accounts.json")
-    if isinstance(data, dict) and isinstance(data.get("active"), str) and data["active"]:
-        return data["active"]
-    return "logged in" if (home / ".gemini" / "oauth_creds.json").is_file() else None
-
-
 def _pi(home: Path) -> str | None:
     data = _json(home / ".pi" / "agent" / "auth.json")
     if not isinstance(data, dict) or not data:
@@ -81,7 +74,6 @@ def _qoder(home: Path) -> str | None:
 _READERS = {
     "claude": _claude,
     "copilot": _copilot,
-    "gemini": _gemini,
     "pi": _pi,
     "agy": _agy,
     "qodercli": _qoder,

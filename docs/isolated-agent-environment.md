@@ -12,7 +12,6 @@ CLI agent 工具（Claude Code、Codex 等）默认读取用户主目录下的�
 |-------|---------------|
 | Claude Code | `~/.claude/settings.json`, `~/.claude/.credentials.json`, `~/.claude.json` |
 | Codex | `~/.codex/auth.json`, `~/.codex/config.toml`（或 `$CODEX_HOME`） |
-| Gemini CLI | `~/.gemini/.env`, `~/.gemini/oauth_creds.json`, `~/.gemini/settings.json` |
 | QoderCLI | `~/.qoder/`, `~/.qoder-cli/` |
 
 当前 `BaseSubprocessAdapter` 使用 `env=None` 启动子进程，直接继承父进程的全部环境变量和文件系统访问权限。这意味着：

@@ -45,13 +45,6 @@ PERSONA_PROMPTS: dict[str, str] = {
         "Provide clear explanations and produce high-quality code that follows "
         "best practices."
     ),
-    # --- Gemini CLI ---
-    "gemini": (
-        "You are Gemini CLI, Google's AI coding assistant that helps users with "
-        "software development tasks through a terminal interface. You can analyze "
-        "code, execute commands, and assist with building and debugging projects. "
-        "Provide accurate and helpful responses."
-    ),
     # --- Generic / default ---
     "generic": (
         "You are a helpful coding assistant."

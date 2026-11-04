@@ -5,7 +5,6 @@ from clippet.adapters.base import BaseAdapter, BaseSubprocessAdapter
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.adapters.codex import CodexAdapter
 from clippet.adapters.copilot import CopilotAdapter
-from clippet.adapters.gemini import GeminiAdapter
 from clippet.adapters.personas import PERSONA_PROMPTS, format_skill_block, format_single_skill
 from clippet.adapters.pi import PiAdapter
 from clippet.adapters.qodercli import QoderCLIAdapter, QoderAdapter
@@ -25,7 +24,6 @@ __all__ = [
     "ClaudeAdapter",
     "CodexAdapter",
     "CopilotAdapter",
-    "GeminiAdapter",
     "PERSONA_PROMPTS",
     "PiAdapter",
     "QoderAdapter",  # Backwards compatibility alias

@@ -42,11 +42,13 @@ WARN = "#b37f22"
 BAD = "#b9543f"
 INFO = "#3a76b0"
 PLUM = "#7a5c9e"
+GOLD = "#8a6d1f"
 NIGHT = "#2b241e"
 NIGHT_INK = "#ece2d3"
 NIGHT_MUTED = "#a3927b"
 
-AGENT_COLORS = {"Claude": PLUM, "Codex": OK, "QoderCLI": INFO, "Gemini": BRAND}
+AGENT_COLORS = {"Claude": PLUM, "Codex": OK, "QoderCLI": INFO, "Antigravity": GOLD}
+AGENT_COMMANDS = {"Claude": "claude", "Codex": "codex", "QoderCLI": "qodercli", "Antigravity": "agy"}
 
 Point = tuple[float, float]
 
@@ -613,13 +615,14 @@ def draw_banner(letters: Lettering) -> str:
     d.arrow([(908, 318), (894, 312), (878, 308)], color=MUTED, width=1.8, head=10, dash="1.5 7")
 
     # bottom: the agents, each card drawn a little crooked
-    names = ["Claude", "Codex", "QoderCLI", "Gemini"]
+    names = ["Claude", "Codex", "QoderCLI", "Antigravity"]
     tilts = [-2.2, 1.4, -1.0, 2.0]
     for i, name in enumerate(names):
         cx = 228 + i * 248
         bx, by, bw, bh = cx - 92, 480, 184, 104
         d.box(bx, by, bw, bh, r=14, fill=PAPER, tilt=tilts[i], width=2.0)
-        d.text(name, cx, by + 64, 34, color=AGENT_COLORS[name], anchor="middle", tilt=tilts[i] * 0.7)
+        d.text(name, cx, by + 64, d.fit(name, 34, bw - 24), color=AGENT_COLORS[name], anchor="middle",
+               tilt=tilts[i] * 0.7)
         start = (tx + tww / 2 + (i - 1.5) * 70, ty + th + 4)
         end = (cx + (i - 1.5) * 6, by - 10)
         mid = ((start[0] + end[0]) / 2, start[1] + 52)
@@ -627,8 +630,8 @@ def draw_banner(letters: Lettering) -> str:
 
     d.text("same flags in, structured results out — interactive, headless or in parallel", W / 2, 626, 19,
            color=MUTED, anchor="middle", hand=0.5)
-    return d.svg("CLIppet", "One CLI to orchestrate them all: clippet launches Claude, Codex, QoderCLI and Gemini "
-                 "in a HOME env with the account you choose.")
+    return d.svg("CLIppet", "One CLI to orchestrate them all: clippet launches Claude, Codex, QoderCLI, Antigravity "
+                 "and other agent CLIs in a HOME env with the account you choose.")
 
 
 # --- how it works -------------------------------------------------------------
@@ -659,7 +662,7 @@ def draw_how_it_works(letters: Lettering) -> str:
         ("Pick an identity", ["HOME env · credential file · real HOME", "Codex accounts: Cockpit, sub2api, CLIProxyAPI…"]),
         ("Build the command", ["AgentRequest → the agent's own flags", "+ every argument you passed through"]),
         ("Set up the sandbox", ["HOME → the env, or a temp dir", "inject auth (0600) · drop CODEX_HOME, OPENAI_*…"]),
-        ("Run the agent", ["claude · codex · gemini · qodercli"]),
+        ("Run the agent", ["claude · codex · qodercli · pi · copilot · agy"]),
         ("Read the result", ["output_text · tool_calls · usage · session_id"]),
     ]
     bx, bw, y = 356, 524, 128
@@ -909,13 +912,13 @@ def draw_architecture(letters: Lettering) -> str:
     _card(d, bx, cy0 + 52, bw, 168, "BaseSubprocessAdapter", "base.py",
           ("AgentRequest → the agent's own flags, plus your arguments",
            "run() · run_async(on_output=…) streams · cancel kills the agent"), tilt=-0.2)
-    chips = [("Claude", "claude.py"), ("Codex", "codex.py"), ("Gemini", "gemini.py"), ("QoderCLI", "qodercli.py")]
+    chips = [("Claude", "claude.py"), ("Codex", "codex.py"), ("Antigravity", "antigravity.py"), ("QoderCLI", "qodercli.py")]
     for i, (name, module) in enumerate(chips):
         x = bx + 16 + i * 139
         y = cy0 + 152
         d.box(x, y, 129, 54, r=8, fill="#f7f0e4", width=1.4, shadow=False, tilt=(-1.0, 0.8, -0.6, 1.0)[i])
-        d.text(name, x + 12, y + 24, 19, color=AGENT_COLORS[name], hand=0.6)
-        d.text(module, x + 12, y + 44, 14.5, color=MUTED, hand=0.4)
+        d.text(name, x + 12, y + 24, d.fit(name, 19, 105), color=AGENT_COLORS[name], hand=0.6)
+        d.text(module, x + 12, y + 44, d.fit(module, 14.5, 105), color=MUTED, hand=0.4)
     _card(d, 660, cy0 + 52, 222, 168, "OpenAIAdapter", "api.py",
           ("optional: clippet[api]", "calls the API itself:", "no CLI, no sandbox", "personas.py: personas"),
           dash="2 7", size=21)
@@ -934,12 +937,12 @@ def draw_architecture(letters: Lettering) -> str:
     d.arrow([(646, dy0 + 125), (676, dy0 + 121), (704, dy0 + 125)], color=INK, width=2.0, head=10)
     d.text("spawns", 675, dy0 + 108, 15, color=MUTED, anchor="middle", hand=0.4)
     d.text("agent CLIs · $HOME = the sandbox", 718, dy0 + 62, 16, color=MUTED, hand=0.5)
-    for i, agent in enumerate(("Claude", "Codex", "Gemini", "QoderCLI")):
+    for i, agent in enumerate(("Claude", "Codex", "Antigravity", "QoderCLI")):
         x = 718 + (i % 2) * 213
         y = dy0 + 74 + (i // 2) * 66
         d.box(x, y, 199, 54, r=10, fill=NIGHT, width=2.0, tilt=(-0.8, 0.6, 0.5, -0.7)[i])
         d.text("$", x + 18, y + 35, 21, color=NIGHT_MUTED, hand=0.4)
-        d.text(agent.lower(), x + 40, y + 35, 21, color=NIGHT_INK, hand=0.5)
+        d.text(AGENT_COMMANDS[agent], x + 40, y + 35, 21, color=NIGHT_INK, hand=0.5)
         d.ring(x + 176, y + 27, 6, color=AGENT_COLORS[agent], width=1.4, fill=AGENT_COLORS[agent])
 
     # what goes down, and what comes back

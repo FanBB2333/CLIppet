@@ -247,7 +247,7 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
         help=(
             "Config or credential to launch with: Claude settings JSON, Codex "
             "credential (auth.json, Cockpit Tools / sub2api / CLIProxyAPI export, "
-            "token JSON), Gemini .env, CLIppet composite config, a directory to "
+            "token JSON), CLIppet composite config, a directory to "
             "run in like an env (Codex: its .codex as CODEX_HOME; others: as HOME), "
             "or 'cockpit' for the Cockpit Tools account store"
         ),
@@ -721,10 +721,10 @@ def _normalize_native_agent_type(
 ) -> str:
     """Validate and normalize the requested native agent type."""
 
-    if detected_type not in {"claude_code", "codex", "gemini"}:
+    if detected_type not in {"claude_code", "codex"}:
         raise ValueError(f"Unsupported native config type: {detected_type}")
 
-    if agent_type is not None and agent_type not in ("claude", "claude_code", "codex", "gemini"):
+    if agent_type is not None and agent_type not in ("claude", "claude_code", "codex"):
         raise ValueError(
             f"'{agent_type}' is only supported with CLIppet composite configs or "
             "HOME envs. Please use a CLIppet config file or -e <env> instead."
@@ -1151,7 +1151,7 @@ def _run_native_config(
     account: str | None = None,
     passthrough: list[str] | None = None,
 ) -> None:
-    """Handle a native Claude Code, Codex or Gemini config/credential."""
+    """Handle a native Claude Code config or Codex credential."""
 
     try:
         effective_type = _normalize_native_agent_type(
