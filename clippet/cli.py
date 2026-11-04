@@ -50,12 +50,14 @@ from clippet.config.environments import (
     clone_home_env,
     create_home_env_with_report,
     entry_type,
+    env_isolation_scope,
     env_vars,
     get_environment,
     import_codex_credential,
     list_environments,
     read_env_codex_credential,
     remove_environment,
+    set_env_isolation_scope,
     set_env_vars,
     shared_entries,
     sync_linked_codex_credential,
@@ -64,6 +66,7 @@ from clippet.config.project import resolve_project_launch
 from clippet.config.registry import create_runner_from_config, load_config
 from clippet.isolation import (
     AGENT_CONFIG_PATHS,
+    SCOPE_HOME,
     CredentialSyncBack,
     ensure_shared_links,
 )
@@ -245,7 +248,8 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
             "Config or credential to launch with: Claude settings JSON, Codex "
             "credential (auth.json, Cockpit Tools / sub2api / CLIProxyAPI export, "
             "token JSON), Gemini .env, CLIppet composite config, a directory to "
-            "use as HOME, or 'cockpit' for the Cockpit Tools account store"
+            "run in like an env (Codex: its .codex as CODEX_HOME; others: as HOME), "
+            "or 'cockpit' for the Cockpit Tools account store"
         ),
     )
     parser.add_argument(
@@ -454,6 +458,25 @@ def _add_env_subcommands(parser: argparse.ArgumentParser) -> None:
     env_vars_p.add_argument("agent", nargs="?", help=f"One of: {agent_list()}")
     env_vars_p.add_argument("assign", nargs="*", metavar="VAR=VALUE", help="Variables to set")
     env_vars_p.add_argument("--unset", action="append", default=[], metavar="VAR", help="A variable to remove")
+
+    scope = sub.add_parser(
+        "scope",
+        help="Show or set whether an env's agents keep your HOME (agent) or get the env as HOME (home)",
+        description=(
+            "What env NAME stands in for when its agents run. agent (the default): an agent that can be "
+            "pointed at its own config directory keeps your real HOME, so git, the keychain and other "
+            "tools work as usual, and only its config, login and sessions come from the env (Codex: "
+            "CODEX_HOME=<env>/.codex); the other agents get the env as HOME. home: every agent gets the "
+            "env as HOME (CLIppet's earlier behaviour). Nothing is moved either way."
+        ),
+    )
+    scope.add_argument("name", help="Env name")
+    scope.add_argument(
+        "scope",
+        nargs="?",
+        choices=("agent", "home", "default"),
+        help="agent, home, or default (CLIppet's default, agent); without it, show the env's scope",
+    )
 
     rm = sub.add_parser("remove", help="Unregister an env")
     rm.add_argument("name", help="Name of the environment to remove")
@@ -1191,8 +1214,21 @@ def env_identity(profile: dict) -> dict[str, Any]:
         agents[agent] = any((home / rel).exists() for rel in paths)
     info["agents"] = agents
     info["share"] = list(shared_entries(profile))
+    info["isolation_scope"] = env_isolation_scope(profile)
     info["description"] = profile.get("description", "")
     return info
+
+
+def describe_isolation_scope(requested: str | None) -> str:
+    """What an env with isolation scope *requested* (None: the default) does, said to people."""
+
+    own = [spec for spec in AGENTS.values() if spec.config_dirs]
+    label = requested or "agent (default)"
+    if requested == SCOPE_HOME or not own:
+        return f"{label}: every agent gets the env as HOME"
+    names = ", ".join(spec.key for spec in own)
+    dirs = ", ".join(f"{variable}=<env>/{rel}" for spec in own for variable, rel in spec.config_dirs.items())
+    return f"{label}: {names} keeps your HOME ({dirs}); the other agents get the env as HOME"
 
 
 def _print_env_list(envs: dict[str, dict]) -> None:
@@ -1237,6 +1273,7 @@ def _print_env_status(name: str, info: dict[str, Any]) -> None:
         print(f"  codex source: {source.get('source')} [{source.get('format')}] ({mode})")
     present = [agent for agent, ok in info.get("agents", {}).items() if ok]
     print(f"  agent dirs  : {', '.join(present) if present else '(none yet)'}")
+    print(f"  isolation   : {describe_isolation_scope(info.get('isolation_scope'))}")
     if info.get("share"):
         print(f"  shared      : {', '.join(info['share'])}")
 
@@ -1395,9 +1432,13 @@ def _dispatch_env(args: argparse.Namespace) -> None:
         _env_vars(args)
         return
 
+    if action == "scope":
+        _env_scope(args)
+        return
+
     _fail(
         "specify an env action: list, create, import, status, sync, add, clone, "
-        "path, endpoint, vars, or remove."
+        "path, endpoint, vars, scope, or remove."
     )
 
 
@@ -1407,8 +1448,21 @@ def _home_env_or_fail(name: str) -> dict:
     except KeyError as exc:
         _fail(str(exc.args[0] if exc.args else exc))
     if entry_type(profile) != ENV_TYPE_HOME:
-        _fail(f"env '{name}' is a config-file alias; endpoints and variables are kept in HOME envs")
+        _fail(f"env '{name}' is a config-file alias; endpoints, variables and scopes are kept in HOME envs")
     return profile
+
+
+def _env_scope(args: argparse.Namespace) -> None:
+    profile = _home_env_or_fail(args.name)
+    if args.scope is None:
+        print(f"{args.name}: {describe_isolation_scope(env_isolation_scope(profile))}")
+        return
+    try:
+        profile = set_env_isolation_scope(args.name, None if args.scope == "default" else args.scope)
+    except (KeyError, ValueError) as exc:
+        _fail(str(exc.args[0] if exc.args else exc))
+    print(f"env '{args.name}': {describe_isolation_scope(env_isolation_scope(profile))}")
+    print("  Nothing moved: the agents' config, logins and sessions stay in the env.")
 
 
 def _agent_or_fail(agent: str) -> str:
@@ -1862,7 +1916,7 @@ def _interactive_home_picker(agent_type: str) -> tuple[str, Path | None] | None:
 
     choices = _picker_choices(agent_type)
     config_paths = AGENT_CONFIG_PATHS.get(agent_type, [])
-    real_home = Path.home()
+    real_home = Path.home()  # what a bare launch runs in: this process's HOME
 
     if _can_use_arrow_picker():
         return _arrow_home_picker(agent_type, choices, config_paths, real_home)

@@ -84,7 +84,9 @@ The box at the bottom (`i`) sends a prompt headless — `codex exec --json` for 
 
 ### 3.1 HOME containers (conda-style envs)
 
-A HOME env is a persistent fake `$HOME` at `~/.clippet/envs/<name>/`. CLIppet launches the agent with that directory **as** `$HOME`, so its login, sessions, MCP state and history persist across runs — and stay separate from every other env. Two envs can run at the same time with two different accounts.
+A HOME env is a persistent directory at `~/.clippet/envs/<name>/`, laid out like a HOME: each agent keeps its login, sessions, MCP state and history there, across runs and separate from every other env. Two envs can run at the same time with two different accounts.
+
+How an agent is pointed at the env depends on the agent (its *isolation scope*, §3.4). **Codex keeps your real `$HOME`** and gets `CODEX_HOME=<env>/.codex`, so git credential helpers, the macOS keychain, SSH, package managers and every other tool it starts find your own configuration. The other agents get the env **as** `$HOME`.
 
 ```bash
 clippet env create work --from-current     # copy your agent *configuration* (no logins)
@@ -110,12 +112,13 @@ Settings files can carry a login too; without `--with-auth` those keys are left 
 
 > **Why logins are not copied by default** — OpenAI (and Anthropic) rotate OAuth refresh tokens: the first copy that refreshes invalidates every other copy, and reusing an old refresh token can revoke the whole login. For parallel long-term use, log in separately inside each env. `--with-auth` is there when you knowingly want a copy.
 
-New envs also **link** (not copy) `~/.gitconfig` and `~/.config/git` from your real HOME, so `git commit` inside an agent session keeps your identity. Change this with `--share PATH` (repeatable) or `--no-share`.
+New envs also **link** (not copy) `~/.gitconfig` and `~/.config/git` from your real HOME, so `git commit` inside an agent session that has the env as HOME keeps your identity. Change this with `--share PATH` (repeatable) or `--no-share`. (Codex keeps your real HOME and does not need them.)
 
 ```bash
 clippet env list                     # envs with the Codex account each one carries
 clippet env status [name]            # detailed identity: account, plan, token expiry, source
 clippet env path work                # print the HOME path
+clippet env scope work home          # every agent gets the env as HOME (agent / home / default)
 clippet env clone work scratch       # duplicate (sessions included; logins, endpoints and their keys only with --with-auth)
 clippet env remove scratch           # unregister, keep the directory
 clippet env remove scratch --purge   # also delete ~/.clippet/envs/scratch/
@@ -192,11 +195,20 @@ Interactive launches only add the flags you configured — CLIppet does not inje
 
 ### 3.4 How isolation works (and its limits)
 
-- `$HOME` points at the env (or a temp dir). Variables that would redirect an agent elsewhere are removed from the inherited environment: for example `CODEX_HOME`, `OPENAI_API_KEY` (Codex), `ANTHROPIC_*`, `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN` (Claude), `GEMINI_API_KEY`, `GOOGLE_*` credentials (Gemini, Antigravity), `GH_TOKEN`, `COPILOT_PROVIDER_*` (Copilot), `QODER_*` tokens (Qoder), the provider keys pi reads, and `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_STATE_HOME` / `XDG_CACHE_HOME`; the full lists are in `clippet/agents.py`. Values from your credential file, the env's own variables (§3.6) or `env_overrides` are applied afterwards. Opt out in Python with `IsolationConfig(scrub_agent_env=False)`.
+- **Two isolation scopes.** The env (or, with `-c FILE`, a temp dir) stands in either for the agent's own config directory or for the whole HOME:
+
+  | Scope | `$HOME` | The agent's config, login, sessions | Who gets it |
+  |-------|---------|-------------------------------------|-------------|
+  | `agent` | yours | `<env>/.codex` via `CODEX_HOME` | Codex (the default) |
+  | `home` | the env | `<env>/.claude`, `<env>/.gemini`, … | every other agent; Codex too after `clippet env scope NAME home` |
+
+  The `agent` scope exists for agents that can be pointed at another config directory: Codex keeps `config.toml`, `auth.json`, sessions, history and logs in `CODEX_HOME`, and keys its OS-keyring entries by that path, so each env keeps its own login even with your keychain in reach. Either way the files stay where they are in the env, so switching scopes moves nothing: `clippet env scope NAME home` brings back the earlier behaviour for an env, `clippet env scope NAME default` returns it to the default. In Python: `IsolationConfig(isolation_scope="home")`; in a composite config, `"isolation_scope"` in a credential profile.
+- Variables that would redirect an agent elsewhere are removed from the inherited environment: for example `CODEX_HOME`, `OPENAI_API_KEY` (Codex), `ANTHROPIC_*`, `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN` (Claude), `GEMINI_API_KEY`, `GOOGLE_*` credentials (Gemini, Antigravity), `GH_TOKEN`, `COPILOT_PROVIDER_*` (Copilot), `QODER_*` tokens (Qoder), the provider keys pi reads; in the `home` scope also `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_STATE_HOME` / `XDG_CACHE_HOME`, which would lead back out of the env (in the `agent` scope they stay as they are). The full lists are in `clippet/agents.py`. Values from your credential file, the env's own variables (§3.6) or `env_overrides` are applied afterwards; `$HOME` and, in the `agent` scope, `CODEX_HOME` are set by the scope and cannot be overridden. Opt out in Python with `IsolationConfig(scrub_agent_env=False)`.
+- Tools the agent starts inherit its environment: in the `agent` scope a `codex` started from a shell command stays in the env, because Codex passes `CODEX_HOME` on to its commands (unless your `shell_environment_policy` leaves it out, e.g. `include_only` without it). A `clippet` started from inside a run finds your registry and your own `HOME` / XDG directories even when the run has the env as HOME: every run carries them as `CLIPPET_HOST_HOME`, `CLIPPET_HOST_XDG_*`.
 - In an env (not in your real HOME) Claude Code and Antigravity CLI run with their self-updaters off, so no env downloads its own copy of the binary. pi's own Node.js and Copilot CLI's unpacked package are linked into envs from your real HOME instead of being installed per env.
 - Some agents keep their login in the OS keychain, which a `$HOME` does not separate. On macOS they look for the login keychain under `$HOME` and find none under an env's: Copilot CLI and Antigravity CLI then keep the login in a file inside the env (Copilot asks first: answer `y`), and Claude Code may do the same (not verified with a real Claude account). If macOS says a keychain cannot be found, choose **Cancel**, never "Reset To Defaults". On Linux desktops and Windows the envs share one keyring for those agents. Qoder CLI and pi keep their logins in files.
-- When CLIppet injects a Codex `auth.json`, it also passes `-c cli_auth_credentials_store="file"` so a `config.toml` that selects the OS keyring cannot hide it.
-- This is HOME/environment isolation, not a security sandbox: the agent can still read files outside its workspace, and credential stores keyed by absolute paths (e.g. the macOS Keychain) are only as separate as the tool makes them.
+- When CLIppet injects a Codex `auth.json`, or runs Codex in an env with your HOME (where your keychain is in reach), it also passes `-c cli_auth_credentials_store="file"`, so a `config.toml` that selects the OS keyring can neither hide the env's login nor send a new login made in the env to the keychain. This is a per-run option; no config file is changed. A setting your organisation enforces through Codex's managed configuration still wins: the login then lives in the keychain (still one entry per env), where CLIppet cannot show, import or sync it.
+- This is HOME/environment isolation, not a security sandbox: the agent can still read files outside its workspace, and credential stores keyed by absolute paths (e.g. the macOS Keychain) are only as separate as the tool makes them. The isolation scope decides only where configuration and logins are looked up; what the agent may read, write or reach over the network is still up to its own sandbox (`--sandbox` for Codex) and the OS.
 - `CLIPPET_HOME` relocates `~/.clippet` (registry and envs).
 
 ### 3.5 File-alias envs (legacy)
@@ -484,7 +496,7 @@ results = runner.execute_parallel({
 })
 ```
 
-`IsolationConfig` also accepts `credential_files` (copy files into the sandbox HOME), `credential_contents` (write generated files), `home_dir` (use a persistent HOME), `sync_back` (copy rewritten credential files back after the run) and `env_whitelist` / `env_blacklist`.
+`IsolationConfig` also accepts `credential_files` (copy files into the sandbox HOME), `credential_contents` (write generated files), `home_dir` (use a persistent HOME), `sync_back` (copy rewritten credential files back after the run), `env_whitelist` / `env_blacklist` and `isolation_scope` (`"agent"` / `"home"`, §3.4).
 
 ---
 
@@ -557,7 +569,7 @@ result = runner.execute("claude-personal", request)
 
 - **Identity layer** decides which HOME and credentials a run uses: a HOME env, a credential file in any supported format (converted to the agent's native layout), or the real HOME.
 - **Adapter layer** translates a generic `AgentRequest` into tool-specific CLI flags and parses the raw output back into a structured `AgentResult`.
-- **Sandbox** sets `$HOME`, injects credential files and env vars, removes identity variables inherited from the parent, and cleans up temp HOMEs — after syncing refreshed logins back.
+- **Sandbox** points the agent at the env (`CODEX_HOME` with your own `$HOME` for Codex, `$HOME` for the others), injects credential files and env vars, removes identity variables inherited from the parent, and cleans up temp dirs — after syncing refreshed logins back.
 - **ClippetRunner** wraps multiple adapters and dispatches them in parallel via a thread pool or asyncio.
 
 ---
@@ -572,7 +584,7 @@ A run goes down the left of the picture and its result comes back up the right:
 - **Identity** (`config/`): decides who the run is: a HOME env (`-e`), a credential file (`-c`), a `.clippet.json` pin, or a composite config. It builds the adapter, and that adapter carries the run's `IsolationConfig`.
 - **Accounts** (`auth/`): reads Codex logins from Cockpit Tools, sub2api, CLIProxyAPI or `auth.json` into one `CodexCredential`. These are imported or linked into envs, or used directly with `-c`.
 - **Adapters** (`adapters/`, `parsers/`): turn the `AgentRequest` and your passed-through arguments into the agent's own command, then turn its stdout or JSON events back into an `AgentResult`.
-- **Sandbox** (`isolation.py`): points `$HOME` at the env or a temp dir, drops inherited identity variables, writes credentials (0600), and saves refreshed logins back when the agent exits.
+- **Sandbox** (`isolation.py`): points the agent at the env or a temp dir (its config directory, e.g. `CODEX_HOME`, with your own `$HOME`, or the whole `$HOME`), drops inherited identity variables, writes credentials (0600), and saves refreshed logins back when the agent exits.
 
 ```
 clippet/
@@ -612,7 +624,8 @@ clippet/
 ├── agents.py            # What differs between the agent CLIs: files, logins, variables, resume, endpoints
 ├── endpoints.py         # Third-party API endpoints per env and agent
 ├── desktop.py           # The Codex desktop app, one instance per env (macOS)
-├── isolation.py         # Sandbox environments, credential providers, env scrubbing
+├── host.py              # Your own HOME and XDG dirs, also seen from inside an env's run
+├── isolation.py         # Sandbox environments and isolation scopes, credential providers, env scrubbing
 ├── models.py            # AgentRequest, AgentResult, IsolationConfig, ToolCallRecord
 └── protocols.py         # ClippetAdapter protocol
 ```
@@ -624,7 +637,7 @@ clippet/
 | `AgentRequest` | Task prompt, workspace, timeout, model override, extra CLI args, isolation config |
 | `AgentResult` | Raw output, final `output_text`, success flag, execution time, tool calls, step count, usage, session id |
 | `ToolCallRecord` | Tool name, parameters, timestamp |
-| `IsolationConfig` | HOME dir, credential files/contents, sync-back, env overrides, whitelist/blacklist, env scrubbing |
+| `IsolationConfig` | HOME dir, isolation scope (agent / home), credential files/contents, sync-back, env overrides, whitelist/blacklist, env scrubbing |
 | `CodexCredential` | One Codex identity from any source format; renders native `auth.json` |
 
 ### 14.2 Built-in Adapters

@@ -6,8 +6,9 @@ Supports these input types for ``-c``:
 3. A Codex credential in any format understood by :mod:`clippet.auth.codex`
    (Codex ``auth.json``, Cockpit Tools export, sub2api export, CLIProxyAPI
    token file, plain token bundle, JSON arrays / JSON Lines of those).
-4. A **directory** path — treated as a "second home" that is used directly
-   as ``$HOME`` for the launched agent.
+4. A **directory** path — treated as a "second home": the env the agent runs
+   in (its config directory, e.g. ``CODEX_HOME=<dir>/.codex``, or the whole
+   ``$HOME``, depending on the isolation scope).
 """
 
 from __future__ import annotations
@@ -34,6 +35,8 @@ from clippet.auth.codex import (
     load_codex_credentials,
     select_credential,
 )
+from clippet.host import host_home
+from clippet.isolation import SCOPE_AGENT, effective_scope
 from clippet.models import IsolationConfig
 
 #: ``-c`` override that makes Codex read the auth.json CLIppet injected even
@@ -278,6 +281,17 @@ def codex_isolation_for_credential(
     )
 
 
+def default_codex_home() -> Path:
+    """Where Codex keeps its state for a run started from here: ``$CODEX_HOME``, else ``~/.codex``.
+
+    Inside an env whose Codex keeps your HOME, ``$CODEX_HOME`` is the env's,
+    so the "current" login is the env's one, as for Codex itself.
+    """
+
+    override = os.environ.get("CODEX_HOME")
+    return Path(override).expanduser() if override else Path.home() / ".codex"
+
+
 def create_adapter_from_codex_config(
     config_path: Path | str | None = None,
     config_toml_path: Path | str | None = None,
@@ -289,9 +303,10 @@ def create_adapter_from_codex_config(
     Supports three usage patterns:
 
     * **credential only** (``config_path`` set): the ``config.toml`` is read
-      from the real ``~/.codex/config.toml`` if it exists.
+      from Codex's own ``config.toml`` (``$CODEX_HOME``, else ``~/.codex``) if
+      it exists.
     * **config.toml only** (``config_toml_path`` set): the credential is read
-      from the real ``~/.codex/auth.json``.
+      from Codex's own ``auth.json`` there.
     * **Both files** (both set): both are injected into the sandbox.
 
     The credential may be in any format understood by
@@ -301,9 +316,9 @@ def create_adapter_from_codex_config(
 
     Args:
         config_path: Credential source.  When *None*, falls back to
-            ``~/.codex/auth.json``.
+            Codex's own ``auth.json`` (see :func:`default_codex_home`).
         config_toml_path: Path to the Codex ``config.toml``.  When *None*,
-            falls back to ``~/.codex/config.toml``.
+            falls back to Codex's own ``config.toml``.
         account: Selector for sources holding several accounts (1-based
             index, e-mail, e-mail local part, label or account id).
         **adapter_kwargs: Extra keyword arguments forwarded to
@@ -322,10 +337,10 @@ def create_adapter_from_codex_config(
         if not source.startswith("cockpit"):
             source = str(Path(source).expanduser().resolve())
     else:
-        default_auth = Path.home() / ".codex" / "auth.json"
+        default_auth = default_codex_home() / "auth.json"
         if not default_auth.is_file():
             raise FileNotFoundError(
-                "No auth.json provided and ~/.codex/auth.json does not exist."
+                f"No auth.json provided and {default_auth} does not exist."
             )
         source = str(default_auth)
 
@@ -336,7 +351,7 @@ def create_adapter_from_codex_config(
     if config_toml_path is not None:
         toml_path: Path | None = Path(config_toml_path).expanduser().resolve()
     else:
-        candidate = Path.home() / ".codex" / "config.toml"
+        candidate = default_codex_home() / "config.toml"
         toml_path = candidate if candidate.is_file() else None
 
     single_native = (
@@ -417,18 +432,23 @@ def create_adapter_from_gemini_config(
 def create_adapter_with_second_home(
     home_dir: Path | str,
     agent_type: str,
+    isolation_scope: str | None = None,
     **adapter_kwargs,
 ) -> BaseSubprocessAdapter:
     """Create an adapter that uses a persistent *second home* directory.
 
-    The directory at ``home_dir`` is used **directly** as ``$HOME``.  It
-    should already contain the appropriate agent config hierarchy (e.g.
-    ``.claude/``, ``.codex/``, ``.gemini/``, ``.qoder/``).
+    The directory at ``home_dir`` is used **directly** as the env: the agent's
+    config directory inside it (``CODEX_HOME=<dir>/.codex``, isolation scope
+    ``agent``) or the whole ``$HOME`` (scope ``home``).  It should already
+    contain the appropriate agent config hierarchy (e.g. ``.claude/``,
+    ``.codex/``, ``.gemini/``, ``.qoder/``).
 
     Args:
         home_dir: Path to the second-home directory.
         agent_type: a key of :data:`clippet.agents.AGENTS` (``"claude_code"``
             is taken for ``"claude"``).
+        isolation_scope: ``"agent"`` or ``"home"``; by default the scope the
+            registered env living there asks for, else CLIppet's default.
         **adapter_kwargs: Extra keyword arguments forwarded to the adapter
             constructor.
 
@@ -448,17 +468,25 @@ def create_adapter_with_second_home(
             f"Supported types: {agent_list()}."
         )
     run_env: dict[str, str] = {}
-    if Path(home_dir) != Path.home().resolve():
+    is_env = Path(home_dir) != host_home().resolve()
+    if is_env:
+        from clippet.config.environments import isolation_scope_for_home
         from clippet.endpoints import run_vars
 
         # an env is not your real HOME: what the agent should do differently
         # there, then what the env sets for it (a third-party endpoint, ...)
         run_env.update(spec.run_env)
         run_env.update(run_vars(home_dir, spec.key))
-    isolation = IsolationConfig(home_dir=home_dir, env_overrides=run_env)
-    if spec.key == "codex" and (Path(home_dir) / ".codex" / "auth.json").is_file():
+        if isolation_scope is None:
+            isolation_scope = isolation_scope_for_home(home_dir)
+    scope_field = {"isolation_scope": isolation_scope} if isolation_scope is not None else {}
+    isolation = IsolationConfig(home_dir=home_dir, env_overrides=run_env, **scope_field)
+    keeps_home = effective_scope(isolation_scope, spec.key) == SCOPE_AGENT
+    if spec.key == "codex" and ((Path(home_dir) / ".codex" / "auth.json").is_file() or (is_env and keeps_home)):
         # The env carries its login as a file; make sure a copied
-        # config.toml selecting the OS keyring cannot hide it.
+        # config.toml selecting the OS keyring cannot hide it.  With your
+        # HOME the keychain is in reach, so a login made in the env must be
+        # told to land in its auth.json too.
         overrides = dict(adapter_kwargs.pop("config_overrides", None) or {})
         key, value = CODEX_FILE_STORE_OVERRIDE
         overrides.setdefault(key, value)

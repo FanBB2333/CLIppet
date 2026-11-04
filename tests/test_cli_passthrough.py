@@ -14,7 +14,11 @@ import pytest
 import clippet.config.environments as env_mod
 from clippet.adapters.codex import CodexAdapter, parse_codex_events, summarize_codex_events
 from clippet.cli import _build_parser, main, split_agent_args
-from clippet.config.environments import create_home_env, get_environment
+from clippet.config.environments import (
+    create_home_env,
+    get_environment,
+    set_env_isolation_scope,
+)
 from clippet.config.project import load_project_config, resolve_project_launch
 from clippet.models import AgentRequest
 from tests.codex_fixtures import cockpit_account, cockpit_export, native_auth
@@ -70,8 +74,11 @@ def _home_env_with_login(name: str = "work") -> Path:
     return home
 
 
-def test_env_launch_forwards_subcommand(clippet_root, tty, monkeypatch) -> None:
+def test_env_launch_forwards_subcommand(clippet_root, tty, tmp_path, monkeypatch) -> None:
     home = _home_env_with_login()
+    own = tmp_path / "own-home"
+    own.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: own))
     monkeypatch.setenv("CODEX_HOME", "/real/.codex")
     monkeypatch.setattr(sys, "argv", ["clippet", "-e", "work", "codex", "resume", "--last"])
 
@@ -84,6 +91,22 @@ def test_env_launch_forwards_subcommand(clippet_root, tty, monkeypatch) -> None:
     assert command[-2:] == ["resume", "--last"]
     assert "--sandbox" not in command and "--model" not in command
     assert 'cli_auth_credentials_store="file"' in command
+    env = run.call_args.kwargs["env"]
+    # Codex keeps your HOME; the env's .codex replaces the inherited CODEX_HOME
+    assert env["HOME"] == str(own)
+    assert env["CODEX_HOME"] == str(home.resolve() / ".codex")
+
+
+def test_env_launch_in_home_scope_replaces_home(clippet_root, tty, monkeypatch) -> None:
+    home = _home_env_with_login()
+    set_env_isolation_scope("work", "home")
+    monkeypatch.setenv("CODEX_HOME", "/real/.codex")
+    monkeypatch.setattr(sys, "argv", ["clippet", "-e", "work", "codex", "resume", "--last"])
+
+    with patch("clippet.cli.subprocess.run") as run:
+        run.return_value = MagicMock(returncode=0)
+        main()
+
     env = run.call_args.kwargs["env"]
     assert env["HOME"] == str(home.resolve())
     assert "CODEX_HOME" not in env
@@ -310,7 +333,7 @@ def test_project_config_can_pin_env(clippet_root, tmp_path, tty, monkeypatch) ->
     with patch("clippet.cli.subprocess.run") as run:
         run.return_value = MagicMock(returncode=0)
         main()
-    assert run.call_args.kwargs["env"]["HOME"].endswith("/envs/work")
+    assert run.call_args.kwargs["env"]["CODEX_HOME"].endswith("/envs/work/.codex")
 
 
 def test_project_config_rejects_env_with_paths(tmp_path) -> None:

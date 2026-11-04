@@ -8,7 +8,43 @@ import tempfile
 from pathlib import Path
 from typing import Iterable, Mapping, Protocol
 
-from clippet.agents import AGENTS
+from clippet.agents import AGENTS, agent_spec
+from clippet.host import HOST_DIR_VARS, HOST_PREFIX, Host, host
+
+# ---------------------------------------------------------------------------
+# Isolation scopes
+# ---------------------------------------------------------------------------
+
+#: The env stands in only for the agent's own config directory; HOME stays yours.
+SCOPE_AGENT = "agent"
+#: The env stands in for the whole HOME.
+SCOPE_HOME = "home"
+ISOLATION_SCOPES: tuple[str, ...] = (SCOPE_AGENT, SCOPE_HOME)
+
+
+def effective_scope(requested: str | None, agent: str | None) -> str:
+    """The isolation scope a run of *agent* gets when *requested* is asked for.
+
+    ``home`` is always the whole HOME.  ``agent`` and ``None`` (CLIppet's
+    default) give the agent's own config directory to agents that can be
+    pointed at one (:attr:`clippet.agents.AgentSpec.config_dirs`), and the
+    whole HOME to the others.
+    """
+
+    if requested not in (None, *ISOLATION_SCOPES):
+        raise ValueError(f"unknown isolation scope '{requested}': use 'agent' or 'home'")
+    if requested == SCOPE_HOME:
+        return SCOPE_HOME
+    spec = agent_spec(agent)
+    return SCOPE_AGENT if spec is not None and spec.config_dirs else SCOPE_HOME
+
+
+def config_dirs_for(agent: str | None) -> dict[str, str]:
+    """The config-directory variables of *agent*, each with its place in an env."""
+
+    spec = agent_spec(agent)
+    return dict(spec.config_dirs) if spec is not None else {}
+
 
 # ---------------------------------------------------------------------------
 # Well-known config paths per agent (relative to HOME)
@@ -26,6 +62,7 @@ AGENT_CONFIG_PATHS: dict[str, list[str]] = {
 
 # Variables that point a tool at a config/data directory *outside* $HOME.  When
 # HOME is replaced they would silently redirect agents back to the real home.
+# In the "agent" scope HOME is not replaced, so they are kept as they are.
 HOME_POINTER_ENV_VARS: tuple[str, ...] = (
     "XDG_CONFIG_HOME",
     "XDG_DATA_HOME",
@@ -39,10 +76,15 @@ HOME_POINTER_ENV_VARS: tuple[str, ...] = (
 AGENT_IDENTITY_ENV_VARS: dict[str, tuple[str, ...]] = {key: spec.identity_env for key, spec in AGENTS.items()}
 
 
-def scrub_patterns_for(agent: str | None) -> tuple[str, ...]:
-    """Return the env-var names/prefix patterns to drop for an isolated *agent* run."""
+def scrub_patterns_for(agent: str | None, scope: str = SCOPE_HOME) -> tuple[str, ...]:
+    """Return the env-var names/prefix patterns to drop for an isolated *agent* run.
 
-    patterns = list(HOME_POINTER_ENV_VARS)
+    The XDG directory variables go only in the ``home`` scope, where HOME is
+    replaced; the variables that would give the agent another identity go in
+    both.
+    """
+
+    patterns = list(HOME_POINTER_ENV_VARS) if scope == SCOPE_HOME else []
     if agent:
         patterns.extend(AGENT_IDENTITY_ENV_VARS.get(agent, ()))
     return tuple(patterns)
@@ -77,7 +119,7 @@ def _write_private_file(path: Path, data: bytes) -> None:
 
 
 class IsolatedEnvironment:
-    """Create a sandboxed HOME directory and environment for one agent run.
+    """Create an isolated directory and environment for one agent run.
 
     Supports two modes:
 
@@ -85,12 +127,27 @@ class IsolatedEnvironment:
       under ``base_dir`` (or the system temp root).  The directory is removed on
       ``cleanup()`` unless ``persist`` is *True*.
     * **Second-home mode**: when ``home_dir`` is given, the supplied path is used
-      *directly* as ``$HOME``.  No temp directory is created and the path is
-      **never** removed by CLIppet.
+      *directly*.  No temp directory is created and the path is **never**
+      removed by CLIppet.
 
-    ``scrub_env`` lists inherited variables to drop (exact names, or prefixes
-    ending in ``*``).  It is applied after the whitelist/blacklist and before
-    ``env_overrides``, so explicit overrides always win.
+    That directory is the env's root (:attr:`env_root`): credentials are
+    written, synced back and resolved under it, whatever the scope.  *scope*
+    decides what the process sees:
+
+    * ``"home"`` (the default here): ``HOME`` is the env's root.
+    * ``"agent"``: ``HOME`` stays the user's own (:mod:`clippet.host`), and
+      each variable of *config_dirs* points at its place under the env's root
+      (``{"CODEX_HOME": ".codex"}`` gives ``CODEX_HOME=<root>/.codex``,
+      created when missing).
+
+    The environment is built from the inherited one (``os.environ``, or
+    *environ*), in this order: inside a run CLIppet started, ``HOME`` and the
+    XDG directories are first put back to the user's own values; then the
+    whitelist, the blacklist and ``scrub_env`` (exact names, or prefixes
+    ending in ``*``) drop variables; then ``env_overrides`` are applied; last
+    come the variables the scope sets, which overrides cannot change:
+    ``HOME``, the config directories (``agent`` scope) and the
+    ``CLIPPET_HOST_*`` record of the user's own session.
     """
 
     def __init__(
@@ -103,7 +160,20 @@ class IsolatedEnvironment:
         env_whitelist: list[str] | None = None,
         env_blacklist: list[str] | None = None,
         scrub_env: Iterable[str] | None = None,
+        *,
+        scope: str = SCOPE_HOME,
+        config_dirs: Mapping[str, str] | None = None,
+        environ: Mapping[str, str] | None = None,
     ) -> None:
+        if scope not in ISOLATION_SCOPES:
+            raise ValueError(f"unknown isolation scope '{scope}': use 'agent' or 'home'")
+        dirs = dict(config_dirs or {})
+        for variable, relative in dirs.items():
+            parts = Path(relative).parts
+            if not variable or not parts or Path(relative).is_absolute() or ".." in parts:
+                raise ValueError(f"{variable or '(no name)'}: '{relative}' is not a folder inside the env")
+        if scope == SCOPE_AGENT and not dirs:
+            raise ValueError("isolation scope 'agent' needs the variable that points the agent at its config")
         self._base_dir = Path(base_dir).expanduser() if base_dir else None
         self._home_dir_override = Path(home_dir).expanduser() if home_dir else None
         self._persist = persist
@@ -112,17 +182,50 @@ class IsolatedEnvironment:
         self._env_whitelist = list(env_whitelist) if env_whitelist is not None else None
         self._env_blacklist = list(env_blacklist) if env_blacklist is not None else None
         self._scrub_env = tuple(scrub_env or ())
+        self._scope = scope
+        self._config_dirs = dirs if scope == SCOPE_AGENT else {}
+        self._environ = environ
         self._home_dir: Path | None = None
+        self._host: Host | None = None
+        self._managed: dict[str, str] = {}
         self._env: dict[str, str] | None = None
         self._is_second_home: bool = False
 
     @property
-    def home_dir(self) -> Path:
-        """Return the sandbox HOME directory."""
+    def env_root(self) -> Path:
+        """The env's own directory: where credentials and the agent's config live."""
 
         if self._home_dir is None:
             raise RuntimeError("IsolatedEnvironment has not been entered")
         return self._home_dir
+
+    @property
+    def home_dir(self) -> Path:
+        """The env's root (:attr:`env_root`); the process HOME only in the ``home`` scope."""
+
+        return self.env_root
+
+    @property
+    def process_home(self) -> Path:
+        """The ``HOME`` the agent and everything it starts see."""
+
+        if self._scope == SCOPE_HOME:
+            return self.env_root
+        if self._host is None:
+            raise RuntimeError("IsolatedEnvironment has not been entered")
+        return self._host.home
+
+    @property
+    def scope(self) -> str:
+        """``agent`` or ``home``: see the class description."""
+
+        return self._scope
+
+    @property
+    def config_dirs(self) -> dict[str, Path]:
+        """The config-directory variables this run sets, with their folders (``agent`` scope)."""
+
+        return {variable: self.resolve_path(relative) for variable, relative in self._config_dirs.items()}
 
     @property
     def env(self) -> dict[str, str]:
@@ -141,7 +244,16 @@ class IsolatedEnvironment:
         """Create the sandbox directory and environment."""
 
         self._home_dir = self._create_home_dir()
-        self._env = self._build_env()
+        try:
+            self._host = host(self._environ)
+            for folder in self.config_dirs.values():
+                if not folder.is_dir():
+                    folder.mkdir(parents=True, exist_ok=True)
+                    folder.chmod(0o700)
+            self._env = self._build_env()
+        except BaseException:
+            self.cleanup()
+            raise
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -152,32 +264,37 @@ class IsolatedEnvironment:
     def cleanup(self) -> None:
         """Delete the sandbox directory when persistence is disabled.
 
-        Second-home directories are **never** deleted.
+        Second-home directories are **never** deleted, and neither is a
+        directory holding the user's own HOME.
         """
 
         if self._home_dir is None:
             return
 
         cleanup_target = self._home_dir
+        own_home = self._host.home if self._host is not None else None
         self._home_dir = None
+        self._host = None
+        self._managed = {}
         self._env = None
 
         # Never delete a second-home directory
         if self._is_second_home:
             return
 
-        if not self._persist:
-            shutil.rmtree(cleanup_target, ignore_errors=True)
+        if self._persist or (own_home is not None and _holds(cleanup_target, own_home)):
+            return
+        shutil.rmtree(cleanup_target, ignore_errors=True)
 
     def resolve_path(self, relative_path: str | Path) -> Path:
-        """Resolve a sandbox-relative path under the virtual HOME directory."""
+        """Resolve a path relative to the env's root (never outside it)."""
 
         sandbox_relative_path = Path(relative_path)
         if sandbox_relative_path.is_absolute():
             raise ValueError("Sandbox paths must be relative to the isolated HOME")
 
-        destination = (self.home_dir / sandbox_relative_path).resolve()
-        sandbox_root = self.home_dir.resolve()
+        destination = (self.env_root / sandbox_relative_path).resolve()
+        sandbox_root = self.env_root.resolve()
 
         if destination != sandbox_root and sandbox_root not in destination.parents:
             raise ValueError("Sandbox path escapes the isolated HOME directory")
@@ -185,12 +302,12 @@ class IsolatedEnvironment:
         return destination
 
     def update_env(self, variables: dict[str, str]) -> None:
-        """Apply environment variable overrides to the sandbox."""
+        """Apply environment variable overrides to the sandbox (not the ones the scope sets)."""
 
         self._env_overrides.update(variables)
         if self._env is not None:
             self._env.update(variables)
-            self._env["HOME"] = str(self.home_dir)
+            self._env.update(self._managed)
 
     def _create_home_dir(self) -> Path:
         # Second-home mode: use the pre-existing directory directly
@@ -209,7 +326,18 @@ class IsolatedEnvironment:
         return Path(tempfile.mkdtemp(prefix="clippet-agent-", dir=parent_dir))
 
     def _build_env(self) -> dict[str, str]:
-        env = dict(os.environ) if self._inherit_env else {}
+        source = os.environ if self._environ is None else self._environ
+        own = self._host if self._host is not None else host(source)
+        env = dict(source) if self._inherit_env else {}
+
+        if env:
+            # Start from the user's own session: a CLIppet run this one is
+            # nested in may have moved HOME and dropped the XDG directories.
+            env = {key: value for key, value in env.items() if not key.startswith(HOST_PREFIX)}
+            if own.nested:
+                for name in HOST_DIR_VARS:
+                    env.pop(name, None)
+                env.update(own.dirs)
 
         if self._env_whitelist is not None:
             allowed = set(self._env_whitelist)
@@ -227,9 +355,24 @@ class IsolatedEnvironment:
             }
 
         env.update(self._env_overrides)
-        env["HOME"] = str(self.home_dir)
+
+        managed = {"HOME": str(self.process_home)}
+        managed.update({variable: str(folder) for variable, folder in self.config_dirs.items()})
+        managed.update(own.context())
+        self._managed = managed
+        env.update(managed)
 
         return env
+
+
+def _holds(directory: Path, path: Path) -> bool:
+    """Whether *path* is *directory* or lies inside it."""
+
+    try:
+        directory, path = directory.resolve(), path.resolve()
+    except OSError:
+        return True
+    return path == directory or directory in path.parents
 
 
 class CredentialProvider(Protocol):
@@ -434,7 +577,7 @@ def ensure_shared_links(
     does not exist are skipped.  Returns the entries that were linked.
     """
 
-    real_home = (real_home or Path.home()).expanduser()
+    real_home = (real_home or host().home).expanduser()
     home_dir = Path(home_dir)
     if home_dir.resolve() == real_home.resolve():
         return []

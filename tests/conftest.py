@@ -3,13 +3,28 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from clippet.auth.codex import load_codex_credentials
 from clippet.config.environments import create_home_env, import_codex_credential
+from clippet.host import HOST_PREFIX
 from tests.codex_fixtures import cockpit_account, cockpit_export
+
+
+@pytest.fixture(autouse=True)
+def _from_your_own_shell(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run every test as if started from the user's shell, not from inside a CLIppet run.
+
+    Inside one, CLIPPET_HOST_HOME names the real HOME, which would win over a
+    test's fake HOME.
+    """
+
+    for name in list(os.environ):
+        if name.startswith(HOST_PREFIX):
+            monkeypatch.delenv(name)
 
 
 @pytest.fixture()

@@ -69,7 +69,8 @@ class TestEnvScrubbing:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "kept-for-codex")
         monkeypatch.setenv("PATH_MARKER", "kept")
 
-        iso = IsolationConfig(env_overrides={"OPENAI_API_KEY": "sk-explicit"})
+        # the whole HOME is the env: the XDG directories would lead back out of it
+        iso = IsolationConfig(env_overrides={"OPENAI_API_KEY": "sk-explicit"}, isolation_scope="home")
         with create_isolated_environment(iso, "codex") as env:
             assert "CODEX_HOME" not in env.env
             assert "CODEX_API_KEY" not in env.env
@@ -82,6 +83,19 @@ class TestEnvScrubbing:
             env.update_env({"OPENAI_API_KEY": "sk-explicit"})
             assert env.env["OPENAI_API_KEY"] == "sk-explicit"
 
+    def test_codex_identity_is_dropped_but_your_dirs_are_kept_by_default(self, monkeypatch) -> None:
+        monkeypatch.setenv("CODEX_HOME", "/real/.codex")
+        monkeypatch.setenv("CODEX_API_KEY", "sk-parent")
+        monkeypatch.setenv("OPENAI_BASE_URL", "https://relay.example")
+        monkeypatch.setenv("XDG_CONFIG_HOME", "/real/.config")
+
+        with create_isolated_environment(IsolationConfig(), "codex") as env:
+            assert env.scope == "agent"
+            assert env.env["CODEX_HOME"] == str(env.env_root.resolve() / ".codex")
+            assert "CODEX_API_KEY" not in env.env
+            assert "OPENAI_BASE_URL" not in env.env
+            assert env.env["XDG_CONFIG_HOME"] == "/real/.config"
+
     def test_claude_prefix_scrub(self, monkeypatch) -> None:
         monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://parent")
         monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "parent")
@@ -90,9 +104,14 @@ class TestEnvScrubbing:
 
     def test_opt_out_keeps_variables(self, monkeypatch) -> None:
         monkeypatch.setenv("CODEX_HOME", "/real/.codex")
-        iso = IsolationConfig(scrub_agent_env=False)
+        monkeypatch.setenv("CODEX_API_KEY", "sk-parent")
+        iso = IsolationConfig(scrub_agent_env=False, isolation_scope="home")
         with create_isolated_environment(iso, "codex") as env:
             assert env.env["CODEX_HOME"] == "/real/.codex"
+        # in the agent scope CODEX_HOME is what the scope sets; the rest is kept
+        with create_isolated_environment(IsolationConfig(scrub_agent_env=False), "codex") as env:
+            assert env.env["CODEX_HOME"] == str(env.env_root.resolve() / ".codex")
+            assert env.env["CODEX_API_KEY"] == "sk-parent"
 
 
 class TestCredentialFiles:
@@ -366,12 +385,19 @@ class TestCodexDetection:
     def test_second_home_forces_file_store_when_auth_exists(self, tmp_path: Path) -> None:
         home = tmp_path / "env"
         (home / ".codex").mkdir(parents=True)
-        bare = create_adapter_with_second_home(home, "codex")
+        bare = create_adapter_with_second_home(home, "codex", isolation_scope="home")
         assert not bare.config_overrides
         (home / ".codex" / "auth.json").write_text(json.dumps(native_auth()))
-        adapter = create_adapter_with_second_home(home, "codex")
+        adapter = create_adapter_with_second_home(home, "codex", isolation_scope="home")
         assert adapter.config_overrides["cli_auth_credentials_store"] == '"file"'
         assert adapter.model is None and adapter.sandbox is None
+
+    def test_keeping_your_home_always_forces_file_store(self, tmp_path: Path) -> None:
+        # your keychain is in reach then: a login made in the env must still land in its auth.json
+        home = tmp_path / "env"
+        (home / ".codex").mkdir(parents=True)
+        bare = create_adapter_with_second_home(home, "codex")
+        assert bare.config_overrides["cli_auth_credentials_store"] == '"file"'
 
     def test_cockpit_dir_is_not_a_second_home(self, tmp_path: Path) -> None:
         root = tmp_path / "cockpit"

@@ -24,6 +24,9 @@ from clippet.isolation import (
     EnvVarCredentialProvider,
     FileCredentialProvider,
     IsolatedEnvironment,
+    SCOPE_AGENT,
+    config_dirs_for,
+    effective_scope,
     scrub_patterns_for,
 )
 from clippet.models import AgentRequest, AgentResult, IsolationConfig
@@ -618,10 +621,16 @@ def create_isolated_environment(
     isolation: IsolationConfig,
     agent: str | None = None,
 ) -> IsolatedEnvironment:
-    """Build an :class:`IsolatedEnvironment` for *isolation* and *agent*."""
+    """Build an :class:`IsolatedEnvironment` for *isolation* and *agent*.
+
+    Every way CLIppet starts an agent in an env (interactive or headless,
+    sync or async, from the CLI or the TUI) comes through here, so they all
+    get the same environment.
+    """
 
     home_dir = Path(isolation.home_dir) if isolation.home_dir else None
-    scrub = scrub_patterns_for(agent) if isolation.scrub_agent_env else ()
+    scope = effective_scope(isolation.isolation_scope, agent)
+    scrub = scrub_patterns_for(agent, scope) if isolation.scrub_agent_env else ()
 
     return IsolatedEnvironment(
         home_dir=home_dir,
@@ -629,6 +638,8 @@ def create_isolated_environment(
         env_whitelist=isolation.env_whitelist,
         env_blacklist=isolation.env_blacklist,
         scrub_env=scrub,
+        scope=scope,
+        config_dirs=config_dirs_for(agent) if scope == SCOPE_AGENT else None,
     )
 
 

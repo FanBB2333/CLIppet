@@ -3,9 +3,12 @@
 Two entry types are supported:
 
 * ``home`` (default for new entries) — a persistent fake ``$HOME`` living under
-  ``~/.clippet/envs/<name>/``.  CLIppet creates and owns the directory.  At
-  launch time the directory is used directly as ``$HOME`` (second-home mode),
-  so all agent state (sessions, history, MCP, tokens) persists across runs.
+  ``~/.clippet/envs/<name>/``.  CLIppet creates and owns the directory, and
+  all agent state (sessions, history, MCP, tokens) persists there across runs.
+  At launch time an agent that can be pointed at its own config directory
+  keeps your real ``$HOME`` and gets that directory inside the env (Codex:
+  ``CODEX_HOME=<env>/.codex``, isolation scope ``agent``); the others get the
+  env as ``$HOME`` (second-home mode, isolation scope ``home``).
 
 * ``file`` (legacy) — a path alias pointing to an external config file.  The
   file is copied into a fresh temp HOME on each run via ``FileCredentialProvider``;
@@ -20,7 +23,9 @@ The on-disk schema in ``~/.clippet/environments.json`` is::
         "config_path": "/abs/path",  # present when type == "file"
         "description": "",
         "share": [".gitconfig"],     # optional: dotfiles linked from the real HOME
-        "codex_source": {...}        # optional: where the Codex login came from
+        "codex_source": {...},       # optional: where the Codex login came from
+        "isolation_scope": "home",   # optional: "agent" or "home"; absent: the default
+        "vars": {"codex": {...}}     # optional: variables set for an agent's runs
       },
       ...
     }
@@ -44,7 +49,8 @@ from pathlib import Path
 from typing import Any
 
 from clippet.agents import AGENTS, SeedSpec
-from clippet.isolation import copy_tree
+from clippet.host import host_home
+from clippet.isolation import ISOLATION_SCOPES, copy_tree
 
 ENV_TYPE_HOME = "home"
 ENV_TYPE_FILE = "file"
@@ -90,13 +96,14 @@ def get_clippet_root() -> Path:
     """Return CLIppet's per-user state directory.
 
     ``$CLIPPET_HOME`` when set (handy for tests, CI or separate registries),
-    otherwise ``~/.clippet/``.
+    otherwise ``~/.clippet/`` in your own HOME, also when CLIppet runs inside
+    an agent whose HOME is an env.
     """
 
     override = os.environ.get(CLIPPET_HOME_ENV)
     if override:
         return Path(override).expanduser()
-    return Path.home() / ".clippet"
+    return host_home() / ".clippet"
 
 
 def get_environments_file() -> Path:
@@ -275,6 +282,47 @@ def set_env_vars(
     return values
 
 
+#: Where an env keeps its isolation scope in environments.json.
+ISOLATION_SCOPE_KEY = "isolation_scope"
+
+
+def env_isolation_scope(profile: dict) -> str | None:
+    """The isolation scope an env asks for (``agent`` / ``home``), or None for CLIppet's default."""
+
+    value = profile.get(ISOLATION_SCOPE_KEY)
+    return value if value in ISOLATION_SCOPES else None
+
+
+def set_env_isolation_scope(name: str, scope: str | None) -> dict:
+    """Make HOME env *name* run its agents in *scope* (None: back to the default); returns its profile.
+
+    Nothing is moved: the agents' config, logins and sessions stay where they
+    are in the env, whatever the scope.
+    """
+
+    if scope is not None and scope not in ISOLATION_SCOPES:
+        raise ValueError(f"unknown isolation scope '{scope}': use 'agent', 'home' or 'default'")
+    envs = load_environments()
+    if name not in envs:
+        raise KeyError(f"Environment '{name}' not found.")
+    profile = envs[name]
+    if entry_type(profile) != ENV_TYPE_HOME:
+        raise ValueError(f"env '{name}' is a config-file alias; only HOME envs have an isolation scope")
+    if scope is None:
+        profile.pop(ISOLATION_SCOPE_KEY, None)
+    else:
+        profile[ISOLATION_SCOPE_KEY] = scope
+    save_environments(envs)
+    return profile
+
+
+def isolation_scope_for_home(home_dir: Path | str) -> str | None:
+    """The isolation scope the registered env living in *home_dir* asks for (None: the default)."""
+
+    found = profile_for_home(home_dir)
+    return env_isolation_scope(found[1]) if found is not None else None
+
+
 def profile_for_home(home_dir: Path | str) -> tuple[str, dict] | None:
     """The registered HOME env whose directory is *home_dir*, as ``(name, profile)``."""
 
@@ -403,7 +451,7 @@ def seed_from_home(
 ) -> SeedReport:
     """Copy agent configuration from *source_home* (default: real HOME) into *target*."""
 
-    real_home = source_home or Path.home()
+    real_home = source_home or host_home()
     report = SeedReport()
 
     for agent in agents:
@@ -624,6 +672,8 @@ def clone_home_env(
         raise
 
     entry = _new_home_entry(dst_home, description, list(shared_entries(profile)))
+    if env_isolation_scope(profile) is not None:
+        entry[ISOLATION_SCOPE_KEY] = env_isolation_scope(profile)
     if with_auth and isinstance(profile.get("codex_source"), dict):
         entry["codex_source"] = dict(profile["codex_source"])
     if with_auth and isinstance(profile.get("vars"), dict):

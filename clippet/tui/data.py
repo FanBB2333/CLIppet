@@ -21,6 +21,7 @@ from clippet.config.environments import (
     ENV_TYPE_HOME,
     EnvironmentRegistryError,
     entry_type,
+    env_isolation_scope,
     get_clippet_root,
     get_envs_root,
     get_environments_file,
@@ -28,7 +29,13 @@ from clippet.config.environments import (
     read_env_codex_credential,
     shared_entries,
 )
-from clippet.isolation import AGENT_CONFIG_PATHS, AGENT_IDENTITY_ENV_VARS, HOME_POINTER_ENV_VARS
+from clippet.isolation import (
+    AGENT_CONFIG_PATHS,
+    AGENT_IDENTITY_ENV_VARS,
+    HOME_POINTER_ENV_VARS,
+    config_dirs_for,
+    effective_scope,
+)
 
 BASE = "base"
 AGENT_BINARIES = {key: spec.binary for key, spec in AGENTS.items()}
@@ -83,6 +90,21 @@ class EnvView:
     @property
     def login(self) -> str:
         return login_state(self.credential)
+
+    def isolation_scope(self, agent: str) -> str | None:
+        """``agent`` or ``home``: what this env stands in for when *agent* runs (None for ``base``)."""
+
+        if self.is_base:
+            return None
+        requested = env_isolation_scope(self.profile) if self.kind == ENV_TYPE_HOME else None
+        return effective_scope(requested, agent)
+
+    def config_dirs(self, agent: str) -> dict[str, Path]:
+        """The config-directory variables *agent* gets here, with their folders (``agent`` scope)."""
+
+        if self.path is None or self.kind != ENV_TYPE_HOME or self.isolation_scope(agent) != "agent":
+            return {}
+        return {variable: self.path / rel for variable, rel in config_dirs_for(agent).items()}
 
     def endpoint(self, agent: str):
         """Where *agent* sends its requests here when not to its maker (an :class:`Endpoint`), or None."""
@@ -600,6 +622,13 @@ def run_checks(envs: list[EnvView], versions: dict[str, tuple[str | None, str | 
     checks.append(Check(
         "Isolation", "variables dropped for env runs", "info" if dropped else "ok",
         ", ".join(dropped) if dropped else "none set in this shell",
+    ))
+    own_dirs = [f"{agent} ({', '.join(f'{v}=<env>/{rel}' for v, rel in config_dirs_for(agent).items())})"
+                for agent in AGENTS if config_dirs_for(agent)]
+    checks.append(Check(
+        "Isolation", "your HOME in envs", "info",
+        (f"kept for {', '.join(own_dirs)}; the other agents get the env as HOME "
+         "(clippet env scope NAME home: every agent)") if own_dirs else "every agent gets the env as HOME",
     ))
 
     for env in registered:

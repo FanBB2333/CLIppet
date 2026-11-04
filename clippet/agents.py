@@ -2,8 +2,9 @@
 
 For each agent: the binary and how to install it, the files it keeps under
 HOME (and which of them are a login), the variables that would point it at
-another identity when inherited, how to pick one of its conversations back
-up, and how the TUI draws it.  The rest of CLIppet reads these tables instead
+another identity when inherited, the variable that moves its config out of
+HOME (when it has one), how to pick one of its conversations back up, and how
+the TUI draws it.  The rest of CLIppet reads these tables instead
 of naming agents one by one, so supporting another agent starts here.
 
 This module imports nothing from the rest of CLIppet, so anything may import it.
@@ -79,6 +80,12 @@ class AgentSpec:
     keychain: str = ""  # when its login can live outside HOME (an OS keychain), what to tell people
     runtime: tuple[str, ...] = ()  # what its own installation needs from the real HOME, linked into envs
     run_env: dict[str, str] = field(default_factory=dict)  # set for runs in an env (not in your real HOME)
+    # The variables that move all its config and state (login included) out of
+    # HOME, each with where that lives in an env (relative to the env's root).
+    # With them a run keeps your real HOME, for git, the keychain and every
+    # tool the agent starts, and only the agent itself is pointed into the env
+    # (isolation scope "agent").  Without them the env stands in for HOME.
+    config_dirs: dict[str, str] = field(default_factory=dict)
     endpoint: EndpointSpec = field(default_factory=EndpointSpec)  # how it reaches a third-party API
     letter: str = "?"  # its mark in the TUI's agent column
     color: str = "ink"  # its colour in the TUI (a palette key)
@@ -134,6 +141,9 @@ _SPECS: tuple[AgentSpec, ...] = (
         ),
         resume=("resume", "{id}"),
         login="codex login",
+        # config.toml, auth.json, sessions, history and logs all live in
+        # CODEX_HOME; its keyring entries are keyed by that path too
+        config_dirs={"CODEX_HOME": ".codex"},
         # Interactive Codex reads no key from the environment (CODEX_API_KEY
         # only in `codex exec`), but a custom provider's env_key it does.
         endpoint=EndpointSpec(

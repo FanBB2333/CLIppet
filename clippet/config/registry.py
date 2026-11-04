@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, field_validator
@@ -16,15 +16,24 @@ from clippet.orchestrator import ClippetRunner
 
 
 class CredentialProfileConfig(BaseModel):
-    """Reusable credential profile for isolated adapter execution."""
+    """Reusable credential profile for isolated adapter execution.
+
+    ``isolation_scope`` is :attr:`clippet.models.IsolationConfig.isolation_scope`:
+    ``agent`` keeps your HOME and points the agent at its config in the
+    profile's directory (Codex), ``home`` makes that directory HOME; left out,
+    CLIppet's default.
+    """
 
     files: dict[str, str] = Field(default_factory=dict)
     env: dict[str, str] = Field(default_factory=dict)
+    isolation_scope: Literal["agent", "home"] | None = None
 
     def to_isolation_config(self) -> IsolationConfig:
         """Convert the profile into a request-level isolation config."""
 
+        scope = {"isolation_scope": self.isolation_scope} if self.isolation_scope is not None else {}
         return IsolationConfig(
+            **scope,
             credential_files={
                 relative_path: _expand_string(source_path)
                 for relative_path, source_path in self.files.items()

@@ -20,6 +20,7 @@ from textual.widgets import Input, Label, Static
 from clippet.agents import AGENTS as AGENT_SPECS
 from clippet.agents import agent_spec
 from clippet.auth.logins import login_of
+from clippet.host import host_home
 from clippet.isolation import AGENT_CONFIG_PATHS
 from clippet.tui.data import EnvView
 from clippet.tui.look import (
@@ -150,15 +151,29 @@ class Launch(ModalScreen[tuple[str, list[str]] | None]):
         rows: list[tuple[str, Text]] = [("agent", line), ("account", self.account())]
         if self.session is not None:
             rows.append(("session", self.session))
+        keeps_home = env.isolation_scope(agent) == "agent"
         if env.kind == "file":
-            home = Text("a fresh temporary HOME, with the file above copied in", style=p["ink"])
+            if keeps_home:
+                home = Text("yours", style=p["ink"])
+                home.append("  the file above goes into a fresh temporary folder for the agent's config",
+                            style=p["muted"])
+            else:
+                home = Text("a fresh temporary HOME, with the file above copied in", style=p["ink"])
         elif not env.exists:
             home = Text(f"{short_path(env.path)}: missing on disk", style=p["bad"])
+        elif keeps_home:
+            home = Text(short_path(host_home()), style=p["ink"])
+            home.append("  yours: git, the keychain and other tools work as usual", style=p["muted"])
         else:
             home = Text(short_path(env.path) if env.path else "—", style=p["ink"])
             if env.is_base:
                 home.append("  your real HOME", style=p["muted"])
         rows.append(("HOME", home))
+        if env.exists:
+            for variable, folder in env.config_dirs(agent).items():
+                where = Text(short_path(folder), style=p["ink"])
+                where.append(f"  the env's {agent} config, login and sessions", style=p["muted"])
+                rows.append((variable, where))
         folder = Text(short_path(self.folder), style=p["info"])
         folder.append_text(self.folder_note if self.folder_note is not None
                            else Text("  (Esc, then w, to start somewhere else)", style=p["faint"]))

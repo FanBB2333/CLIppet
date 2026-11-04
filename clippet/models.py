@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, SecretStr
 
@@ -63,19 +63,39 @@ class IsolationConfig(BaseModel):
 
     Two isolation modes are supported:
 
-    1. **Single-file mode** (default): A temporary HOME directory is created and
-       ``credential_files`` / ``credential_contents`` are written into it.  Any
-       ``env_overrides`` are applied on top.
+    1. **Single-file mode** (default): A temporary directory is created and
+       ``credential_files`` / ``credential_contents`` are written into it
+       (paths relative to it, laid out like a HOME: ``.codex/auth.json``).  It
+       is removed after the run.  Any ``env_overrides`` are applied on top.
     2. **Second-home mode**: Set ``home_dir`` to a persistent directory path that
        already contains the full config hierarchy (``.claude/``, ``.codex/``, etc.).
-       The directory is used *directly* as ``$HOME`` without copying or creating a
-       temporary directory and is **never** deleted by CLIppet.
+       The directory is used *directly*, without copying or creating a
+       temporary directory, and is **never** deleted by CLIppet.
+
+    ``isolation_scope`` decides what that directory stands in for:
+
+    * ``"agent"``: only the agent's own config directory.  The process keeps
+      your real ``HOME`` (and the XDG directories), and the agent is pointed
+      at its config inside the directory (``CODEX_HOME=<dir>/.codex``), so
+      git, the macOS keychain, package managers and every other tool the agent
+      starts find your own configuration.
+    * ``"home"``: the whole HOME: ``HOME`` is the directory and the XDG
+      directory variables are dropped.  This is how CLIppet ran every agent
+      before the scope existed.
+    * ``None`` (the default): ``"agent"`` for agents that can be pointed at
+      another config directory (Codex), ``"home"`` for the others.
+
+    Either way the agent's config, login and sessions are kept in the same
+    place (``<dir>/.codex`` for Codex), so switching scopes moves nothing.
 
     Whenever a run is isolated, environment variables that point an agent at a
     different config directory or identity (``CODEX_HOME``, ``OPENAI_API_KEY``,
-    ``ANTHROPIC_*``, ``XDG_CONFIG_HOME``, ...) are removed from the inherited
-    environment so the selected HOME really decides which account is used.  Set
-    ``scrub_agent_env=False`` to keep them.
+    ``ANTHROPIC_*``, ...) are removed from the inherited environment so the
+    selected directory really decides which account is used; in the ``home``
+    scope the XDG directory variables go too.  Set ``scrub_agent_env=False`` to
+    keep them.  ``HOME`` and, in the ``agent`` scope, the agent's config
+    directory variable are set by the scope; ``env_overrides`` cannot change
+    them.
     """
 
     home_dir: str | None = None
@@ -91,6 +111,7 @@ class IsolationConfig(BaseModel):
     env_blacklist: list[str] | None = None
     persist_sandbox: bool = False
     scrub_agent_env: bool = True
+    isolation_scope: Literal["agent", "home"] | None = None
 
     @property
     def is_second_home(self) -> bool:
@@ -121,6 +142,7 @@ class IsolationConfig(BaseModel):
             "env_blacklist",
             "persist_sandbox",
             "scrub_agent_env",
+            "isolation_scope",
         ):
             if field_name in override.model_fields_set:
                 merged_data[field_name] = getattr(override, field_name)

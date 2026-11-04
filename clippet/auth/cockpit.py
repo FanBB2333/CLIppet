@@ -31,6 +31,7 @@ from clippet.auth.codex import (
     CredentialFormatError,
     credential_from_object,
 )
+from clippet.host import host_home
 
 COCKPIT_DIR_ENV = "CLIPPET_COCKPIT_DIR"
 DEFAULT_COCKPIT_DIRS = (".antigravity_cockpit", ".cockpit_tools")
@@ -61,7 +62,7 @@ def find_cockpit_dir(explicit: str | Path | None = None) -> Path:
     env_dir = os.environ.get(COCKPIT_DIR_ENV)
     if env_dir:
         candidates.append(Path(env_dir).expanduser())
-    candidates.extend(Path.home() / name for name in DEFAULT_COCKPIT_DIRS)
+    candidates.extend(host_home() / name for name in DEFAULT_COCKPIT_DIRS)  # yours, also inside an env's run
 
     for candidate in candidates:
         if is_cockpit_dir(candidate):
