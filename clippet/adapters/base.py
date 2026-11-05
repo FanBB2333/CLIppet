@@ -20,7 +20,6 @@ from clippet.isolation import (
     ContentCredentialProvider,
     CredentialSet,
     CredentialSyncBack,
-    DirectoryCopyProvider,
     EnvVarCredentialProvider,
     FileCredentialProvider,
     IsolatedEnvironment,

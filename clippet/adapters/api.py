@@ -17,7 +17,7 @@ Features:
 from __future__ import annotations
 
 import time
-from typing import Any, Generator, AsyncGenerator, Iterator
+from typing import Any, AsyncGenerator, Iterator
 
 from clippet.adapters.base import BaseAdapter
 from clippet.adapters.personas import PERSONA_PROMPTS, format_skill_block

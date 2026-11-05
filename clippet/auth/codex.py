@@ -662,15 +662,6 @@ def extract_codex_credentials(
     return found
 
 
-def looks_like_codex_credentials(data: Any) -> bool:
-    """Cheap check used by config auto-detection."""
-
-    try:
-        return bool(extract_codex_credentials(data))
-    except Exception:  # pragma: no cover - defensive
-        return False
-
-
 def _parse_text(text: str) -> Any:
     try:
         return json.loads(text)

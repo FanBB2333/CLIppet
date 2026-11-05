@@ -1,7 +1,7 @@
 """How the TUI moves, after papertown's terminal view: while an agent works a
 star turns (· ✢ ✳ ✶ ✻ ✽ and back) and a gleam runs along the words saying
-what it does, counters ease to their values and what just changed glows and
-fades.  Everything is drawn from one clock (the app's ``t``)."""
+what it does and counters ease to their values.  Everything is drawn from one
+clock (the app's ``t``)."""
 
 from __future__ import annotations
 
@@ -99,24 +99,3 @@ class Tween:
             return False
         self.value += (self.target - self.value) * (1 - math.exp(-self.rate * dt))
         return True
-
-
-class Glow:
-    """What just changed, by key: ``k(key)`` is 1 at the change and fades to 0."""
-
-    def __init__(self, seconds: float = 1.4) -> None:
-        self.seconds = seconds
-        self.at: dict[object, float] = {}
-
-    def touch(self, key: object, t: float) -> None:
-        self.at[key] = t
-
-    def k(self, key: object, t: float) -> float:
-        start = self.at.get(key)
-        if start is None:
-            return 0.0
-        k = 1 - (t - start) / self.seconds
-        if k <= 0:
-            self.at.pop(key, None)
-            return 0.0
-        return k * k

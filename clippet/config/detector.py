@@ -21,7 +21,7 @@ from typing import Literal
 
 from pydantic import SecretStr
 
-from clippet.adapters.base import BaseAdapter, BaseSubprocessAdapter
+from clippet.adapters.base import BaseSubprocessAdapter
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.adapters.codex import CodexAdapter
 from clippet.agents import agent_list, agent_spec

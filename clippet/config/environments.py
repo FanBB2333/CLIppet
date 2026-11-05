@@ -71,9 +71,6 @@ SEED_SPECS: dict[str, SeedSpec] = {key: spec.seed for key, spec in AGENTS.items(
 
 SEEDABLE_AGENTS: tuple[str, ...] = tuple(SEED_SPECS)
 
-# Identity fields Claude Code keeps in ~/.claude.json next to MCP settings.
-_CLAUDE_JSON_IDENTITY_KEYS = AGENTS["claude"].seed.scrub[".claude.json"]
-
 
 class EnvironmentRegistryError(ValueError):
     """Raised when ``environments.json`` cannot be read safely."""
@@ -380,12 +377,6 @@ def _copy_entry(src: Path, dst: Path, exclude: tuple[str, ...]) -> None:
         shutil.copy2(src, dst, follow_symlinks=False)
 
 
-def _copy_sanitized_claude_json(src: Path, dst: Path) -> None:
-    """Copy ~/.claude.json (MCP servers, project settings) minus identity keys."""
-
-    _copy_scrubbed_json(src, dst, _CLAUDE_JSON_IDENTITY_KEYS)
-
-
 def _scrub_key(data: Any, path: str, prefix: str = "") -> list[str]:
     """Drop the key at dotted *path* from *data*; a last part ending in ``*`` drops every key it begins.
 
@@ -481,16 +472,6 @@ def seed_from_home(
             else:
                 report.skipped_credentials.append(rel)
     return report
-
-
-def _seed_from_real_home(target: Path, agents: list[str]) -> list[str]:
-    """Backward-compatible helper: seed config and return seeded agent names."""
-
-    seeded: list[str] = []
-    for agent in validate_agents(agents):
-        if seed_from_home(target, [agent]).copied:
-            seeded.append(agent)
-    return seeded
 
 
 def _new_home_entry(home_dir: Path, description: str, share: list[str] | None) -> dict:

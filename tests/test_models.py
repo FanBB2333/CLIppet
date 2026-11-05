@@ -3,7 +3,6 @@
 from datetime import datetime
 from pathlib import Path
 
-import pytest
 
 from clippet.models import AgentRequest, AgentResult, IsolationConfig, ToolCallRecord
 

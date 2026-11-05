@@ -1,7 +1,6 @@
 """Tests for second-home isolation mode and enhanced codex support."""
 
 import json
-import os
 import tempfile
 from pathlib import Path
 

@@ -5,9 +5,7 @@ running any CLI commands.
 """
 
 import json
-from pathlib import Path
 
-import pytest
 
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.adapters.codex import CodexAdapter
