@@ -2,7 +2,7 @@
 
 调研日期：2026-11-02。范围：当前 CLIppet 工作区、这台 Mac 上安装的桌面 App，以及 OpenAI 官方文档。本次增加调研文档，不实现桌面启动功能。
 
-> **2026-11-02 更新（实现）**：CLIppet 已按第 5 节实现 macOS 启动器：`clippet -e NAME codex app [PATH]`，TUI 中按 `g`（可对多个已标记环境同时启动），代码见 `clippet/desktop.py`，用法见 README §3.7。同一环境已有实例在运行时只把它切到前台，不再起第二个进程，此时也不同步链接账户的登录。之后复查本机安装：`codesign --verify --deep --strict /Applications/ChatGPT.app` 已通过，签名团队为 OpenAI（`2DC432GLL2`），下文第 6 节记录的签名失败已不再出现。第 6 节末尾列出的真实双账户 GUI 验收仍未进行。
+> **2026-11-02 更新（实现）**：CLIppet 已按第 5 节实现 macOS 启动器：`clippet -e NAME codex app [PATH]`，TUI 中按 `g`（可对多个已标记环境同时启动），代码见 `clippet/desktop.py`，用法见 `docs/guide.md` §3.7。同一环境已有实例在运行时只把它切到前台，不再起第二个进程，此时也不同步链接账户的登录。之后复查本机安装：`codesign --verify --deep --strict /Applications/ChatGPT.app` 已通过，签名团队为 OpenAI（`2DC432GLL2`），下文第 6 节记录的签名失败已不再出现。第 6 节末尾列出的真实双账户 GUI 验收仍未进行。
 
 ## 结论
 
