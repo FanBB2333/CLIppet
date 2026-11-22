@@ -569,16 +569,15 @@ class EnvsPlace(Place):
 
     def action_sync(self) -> None:
         env = self.current()
-        if env is None or not env.linked:
+        from clippet.config.environments import sync_linked_credentials
+
+        results = sync_linked_credentials(env.name, env.profile) if env and not env.is_base else []
+        if not results:
             self.app.notify("This env is not linked to an account source.", severity="warning")
             return
-        from clippet.config.environments import sync_linked_codex_credential
-
-        result = sync_linked_codex_credential(env.name, env.profile)
-        words = {"updated": "pulled the newest login", "unchanged": "already up to date", "skipped": "not linked"}
-        severity = "warning" if result.action in ("env-newer", "error") else "information"
-        self.app.notify(result.message or words.get(result.action, result.action), title=f"sync {env.name}",
-                        severity=severity)
+        for result in results:
+            severity = "warning" if result.action in ("env-newer", "error") else "information"
+            self.app.notify(result.message or "already up to date", title=f"sync {env.name}", severity=severity)
         self.clippet.reload(select=env.name)
 
     def action_import_account(self) -> None:

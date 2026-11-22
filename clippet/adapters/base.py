@@ -12,6 +12,7 @@ import asyncio
 import logging
 from pathlib import Path
 import subprocess
+import sys
 import time
 from typing import Any, Callable
 
@@ -639,6 +640,8 @@ def create_isolated_environment(
         scrub_env=scrub,
         scope=scope,
         config_dirs=config_dirs_for(agent) if scope == SCOPE_AGENT else None,
+        # Go's os.UserHomeDir uses USERPROFILE on Windows.
+        home_aliases=("USERPROFILE",) if agent == "agy" and sys.platform == "win32" else (),
     )
 
 

@@ -66,6 +66,18 @@ clippet -e acct-a codex                          # Codex, logged in as that acco
 
 CLIppet also reads Cockpit Tools exports, sub2api and CLIProxyAPI files, `auth.json` and token bundles ([all sources](docs/guide.md#32-importing-codex-accounts-from-other-tools)).
 
+## Antigravity accounts
+
+```bash
+clippet auth list cockpit --agent agy
+clippet env import agy-work cockpit --agent agy --account 1
+clippet env import agy-personal cockpit --agent agy --account 2
+clippet -e agy-work agy
+clippet -e agy-work agy -c      # continue the latest conversation in this workspace
+```
+
+Each env keeps its own agy login and conversations. You can also run `clippet agy` and choose an env by email. See the [Antigravity account guide](docs/guide.md#antigravity-accounts-from-cockpit-tools) for one-off launches and moving an env.
+
 ## Terminal UI
 
 `clippet tui`, or plain `clippet` in a terminal, shows every env with its Codex account and remaining quota, launches agents and streams headless runs. It needs the `tui` extra.

@@ -118,7 +118,7 @@ clippet env remove scratch           # unregister, keep the directory
 clippet env remove scratch --purge   # also delete ~/.clippet/envs/scratch/
 ```
 
-Running bare `clippet codex` (or `claude` / `qodercli` / `pi` / `copilot` / `agy`) in a terminal opens a small picker listing `base` (your real HOME) and every env, with the Codex account of each.
+Running bare `clippet codex` (or `claude` / `qodercli` / `pi` / `copilot` / `agy`) in a terminal opens a picker listing `base` (your real HOME) and every env. The Codex and agy pickers show the account when its login file identifies it.
 
 ### 3.2 Importing Codex accounts from other tools
 
@@ -173,6 +173,23 @@ EOF
 clippet -c gw-auth.json --codex-config gw.toml codex
 ```
 
+#### Antigravity accounts from Cockpit Tools
+
+```bash
+clippet auth list cockpit --agent agy
+clippet env import agy-work cockpit --agent agy --account alice@example.com
+clippet -e agy-work agy
+clippet -e agy-work agy -c                  # resume in the same workspace
+clippet -e agy-work agy -- -p /usage        # agy's native usage report
+clippet -c cockpit --account 2 agy          # one-off launch in a temporary HOME
+```
+
+The account numbers follow Cockpit's active index. A named env remembers the account ID and keeps its settings, conversations and OAuth file under its own HOME. Linked imports check the source on launch and keep the newer login when agy has already refreshed it. Use `--no-link` to make the env independent of Cockpit after import.
+
+For an env carrying an agy login, CLIppet sets a nonempty `SSH_CLIENT` in the child environment to select agy's file-backed authentication mode. Existing SSH client information is preserved. Tools started by agy can see this variable too. agy saves token updates in the env's OAuth file. Its separate plugin credential manager may still check the OS keyring.
+
+To move an env, privately copy its HOME directory, including the hidden `.gemini` folder, then run `clippet -c /path/to/copied-home agy` on the destination. This launch needs neither Cockpit's encryption key nor the original machine's registry. The env contains a refresh token, so keep access private. Use `--conversation <id>` when the workspace path has changed.
+
 ### 3.3 Passing arguments through
 
 ```
@@ -200,7 +217,7 @@ Interactive launches only add the flags you configured — CLIppet does not inje
 - Variables that would redirect an agent elsewhere are removed from the inherited environment: for example `CODEX_HOME`, `OPENAI_API_KEY` (Codex), `ANTHROPIC_*`, `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN` (Claude), `GEMINI_API_KEY`, `GOOGLE_*` credentials (Antigravity), `GH_TOKEN`, `COPILOT_PROVIDER_*` (Copilot), `QODER_*` tokens (Qoder), the provider keys pi reads; in the `home` scope also `XDG_CONFIG_HOME` / `XDG_DATA_HOME` / `XDG_STATE_HOME` / `XDG_CACHE_HOME`, which would lead back out of the env (in the `agent` scope they stay as they are). The full lists are in `clippet/agents.py`. Values from your credential file, the env's own variables (§3.6) or `env_overrides` are applied afterwards; `$HOME` and, in the `agent` scope, the agent's config-folder variable (`CODEX_HOME`, `PI_CODING_AGENT_DIR`, `QODER_CONFIG_DIR`) are set by the scope and cannot be overridden. Opt out in Python with `IsolationConfig(scrub_agent_env=False)`.
 - Tools the agent starts inherit its environment: in the `agent` scope a `codex` started from a shell command stays in the env, because Codex passes `CODEX_HOME` on to its commands (unless your `shell_environment_policy` leaves it out, e.g. `include_only` without it). A `clippet` started from inside a run finds your registry and your own `HOME` / XDG directories even when the run has the env as HOME: every run carries them as `CLIPPET_HOST_HOME`, `CLIPPET_HOST_XDG_*`.
 - In an env (not in your real HOME) Claude Code and Antigravity CLI run with their self-updaters off, so no env downloads its own copy of the binary. pi's own Node.js and Copilot CLI's unpacked package are linked into envs from your real HOME instead of being installed per env.
-- Some agents keep their login in the OS keychain, which a `$HOME` does not separate. On macOS they look for the login keychain under `$HOME` and find none under an env's: Copilot CLI and Antigravity CLI then keep the login in a file inside the env (Copilot asks first: answer `y`), and Claude Code may do the same (not verified with a real Claude account). If macOS says a keychain cannot be found, choose **Cancel**, never "Reset To Defaults". On Linux desktops and Windows the envs share one keyring for those agents. Qoder CLI and pi keep their logins in files.
+- Some agents keep their login in the OS keychain, which a `$HOME` does not separate. On macOS they look for the login keychain under `$HOME` and find none under an env's: Copilot CLI and Antigravity CLI then keep the login in a file inside the env (Copilot asks first: answer `y`), and Claude Code may do the same (not verified with a real Claude account). If macOS says a keychain cannot be found, choose **Cancel**, never "Reset To Defaults". Native logins on Linux desktops and Windows can share one keyring. For an agy env with an imported login, CLIppet selects file-backed OAuth storage on launch. Qoder CLI and pi keep their logins in files.
 - When CLIppet injects a Codex `auth.json`, or runs Codex in an env with your HOME (where your keychain is in reach), it also passes `-c cli_auth_credentials_store="file"`, so a `config.toml` that selects the OS keyring can neither hide the env's login nor send a new login made in the env to the keychain. This is a per-run option; no config file is changed. A setting your organisation enforces through Codex's managed configuration still wins: the login then lives in the keychain (still one entry per env), where CLIppet cannot show, import or sync it.
 - This is HOME/environment isolation, not a security sandbox: the agent can still read files outside its workspace, and credential stores keyed by absolute paths (e.g. the macOS Keychain) are only as separate as the tool makes them. The isolation scope decides only where configuration and logins are looked up; what the agent may read, write or reach over the network is still up to its own sandbox (`--sandbox` for Codex) and the OS.
 - `CLIPPET_HOME` relocates `~/.clippet` (registry and envs).

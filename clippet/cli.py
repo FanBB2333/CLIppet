@@ -31,6 +31,8 @@ from clippet.adapters.base import (
     create_isolated_environment,
 )
 from clippet.agents import AGENT_KEYS, AGENTS, API_STYLES, agent_list, agent_spec
+from clippet.auth.antigravity import list_agy_accounts, select_agy_account
+from clippet.auth.logins import login_of
 from clippet.auth.codex import (
     CodexCredential,
     CredentialFormatError,
@@ -53,6 +55,7 @@ from clippet.config.environments import (
     env_isolation_scope,
     env_vars,
     get_environment,
+    import_agy_account,
     import_codex_credential,
     list_environments,
     read_env_codex_credential,
@@ -60,6 +63,7 @@ from clippet.config.environments import (
     set_env_isolation_scope,
     set_env_vars,
     shared_entries,
+    sync_linked_credentials,
     sync_linked_codex_credential,
 )
 from clippet.config.project import resolve_project_launch
@@ -349,7 +353,7 @@ def _add_env_subcommands(parser: argparse.ArgumentParser) -> None:
 
     imp = sub.add_parser(
         "import",
-        help="Store a Codex account (any supported format) in a HOME env",
+        help="Store a Codex or Cockpit agy account in a persistent HOME env",
     )
     imp.add_argument("name", help="Env name (created if it does not exist)")
     imp.add_argument(
@@ -361,6 +365,7 @@ def _add_env_subcommands(parser: argparse.ArgumentParser) -> None:
         ),
     )
     imp.add_argument("--account", help="Account selector when the source holds several")
+    imp.add_argument("--agent", choices=("codex", "agy"), default="codex", help="Account type (default: codex)")
     link = imp.add_mutually_exclusive_group()
     link.add_argument(
         "--link",
@@ -379,12 +384,12 @@ def _add_env_subcommands(parser: argparse.ArgumentParser) -> None:
     imp.add_argument(
         "--overwrite",
         action="store_true",
-        help="Replace a different Codex account already stored in the env",
+        help="Replace a different account of the same agent already stored in the env",
     )
     imp.add_argument(
         "--bare",
         action="store_true",
-        help="When creating the env, do not copy ~/.codex config (config.toml, skills, ...)",
+        help="When creating the env, skip copying the agent's settings and skills",
     )
     imp.add_argument("--description", default="", help="Description for a new env")
 
@@ -535,8 +540,9 @@ def _handle_tui(workspace: str | None) -> None:
 def _add_auth_subcommands(parser: argparse.ArgumentParser) -> None:
     sub = parser.add_subparsers(dest="auth_action")
 
-    lst = sub.add_parser("list", help="List the Codex accounts in a credential source")
+    lst = sub.add_parser("list", help="List Codex or agy accounts in a credential source")
     lst.add_argument("source", help="File, directory, or 'cockpit'")
+    lst.add_argument("--agent", choices=("codex", "agy"), default="codex", help="Account type (default: codex)")
     lst.add_argument("--json", action="store_true", help="Machine-readable output (no secrets)")
 
     exp = sub.add_parser("export", help="Write one account as a native Codex auth.json")
@@ -721,10 +727,10 @@ def _normalize_native_agent_type(
 ) -> str:
     """Validate and normalize the requested native agent type."""
 
-    if detected_type not in {"claude_code", "codex"}:
+    if detected_type not in {"claude_code", "codex", "agy"}:
         raise ValueError(f"Unsupported native config type: {detected_type}")
 
-    if agent_type is not None and agent_type not in ("claude", "claude_code", "codex"):
+    if agent_type is not None and agent_type not in ("claude", "claude_code", "codex", "agy"):
         raise ValueError(
             f"'{agent_type}' is only supported with CLIppet composite configs or "
             "HOME envs. Please use a CLIppet config file or -e <env> instead."
@@ -896,7 +902,7 @@ def _run_interactive(
             )
         try:
             adapter = create_adapter_from_config_file(config_path, agent_type)
-        except ValueError as exc:
+        except (OSError, ValueError) as exc:
             _fail(str(exc))
         _launch_adapter(adapter, passthrough)
         return
@@ -929,12 +935,6 @@ def _run_interactive(
         _fail(str(exc))
 
     _launch_adapter(adapter, passthrough)
-
-
-def _detect_format(config_path: str) -> str:
-    if _is_cockpit_source(config_path):
-        return "codex"
-    return detect_config_type(config_path)
 
 
 def _handle_run(args: argparse.Namespace) -> None:
@@ -977,7 +977,7 @@ def _handle_run(args: argparse.Namespace) -> None:
 
     # 1. Detect config format
     try:
-        config_format = _detect_format(config_path)
+        config_format = detect_config_type(config_path, agent_type)
     except Exception as exc:  # noqa: BLE001 - surfaced verbatim
         _fail(str(exc))
 
@@ -1080,7 +1080,7 @@ def _run_second_home(
 
     try:
         adapter = create_adapter_from_config_file(config_path, agent_type)
-    except ValueError as exc:
+    except (OSError, ValueError) as exc:
         _fail(str(exc))
 
     _execute_headless(adapter, prompt, passthrough)
@@ -1203,6 +1203,7 @@ def env_identity(profile: dict) -> dict[str, Any]:
     credential = read_env_codex_credential(home) if home.is_dir() else None
     info["codex"] = None if credential is None else credential.summary()
     info["codex_text"] = describe_codex_credential(credential)
+    info["agy"] = login_of(home, "agy")
     source = profile.get("codex_source")
     if isinstance(source, dict):
         info["codex_source"] = {
@@ -1272,6 +1273,8 @@ def _print_env_status(name: str, info: dict[str, Any]) -> None:
     if source:
         mode = "linked" if source.get("linked") else "copied"
         print(f"  codex source: {source.get('source')} [{source.get('format')}] ({mode})")
+    if info.get("agy"):
+        print(f"  agy         : {info['agy']}")
     present = [agent for agent, ok in info.get("agents", {}).items() if ok]
     print(f"  agent dirs  : {', '.join(present) if present else '(none yet)'}")
     print(f"  isolation   : {describe_isolation_scope(info.get('isolation_scope'))}")
@@ -1367,15 +1370,16 @@ def _dispatch_env(args: argparse.Namespace) -> None:
             profile = get_environment(args.name)
         except KeyError as exc:
             _fail(str(exc.args[0] if exc.args else exc))
-        result = sync_linked_codex_credential(args.name, profile)
-        if result.action == "skipped":
+        results = sync_linked_credentials(args.name, profile)
+        if not results:
             print(f"Env '{args.name}' is not linked to a credential source.")
-        elif result.action == "unchanged":
-            print(f"Env '{args.name}' already has the newest login.")
-        elif result.action == "updated":
-            print(f"Env '{args.name}': {result.message}.")
-        else:
-            _fail(f"env '{args.name}': {result.message}")
+        for result in results:
+            if result.action == "unchanged":
+                print(f"Env '{args.name}' already has the newest login.")
+            elif result.action == "updated":
+                print(f"Env '{args.name}': {result.message}.")
+            else:
+                _fail(f"env '{args.name}': {result.message}")
         return
 
     if action == "add":
@@ -1560,6 +1564,21 @@ def _normalized_source(source: str) -> str:
 
 def _env_import(args: argparse.Namespace) -> None:
     source = _normalized_source(args.source)
+    if args.agent == "agy":
+        try:
+            account = select_agy_account(source, args.account)
+            link = args.link is not False
+            home_dir, created = import_agy_account(
+                args.name, account, source=source, link=link, overwrite=args.overwrite,
+                seed_config=not args.bare, description=args.description,
+            )
+        except (OSError, ValueError) as exc:
+            _fail(str(exc))
+        verb = "Created" if created else "Updated"
+        print(f"{verb} env '{args.name}' with agy account {account.email} ({'linked' if link else 'copied'}).")
+        print(f"  HOME   : {home_dir}")
+        print(f"  Launch : clippet -e {args.name} agy")
+        return
     try:
         credentials = load_codex_credentials(source)
         credential = select_credential(credentials, args.account)
@@ -1618,6 +1637,19 @@ def _handle_auth(args: argparse.Namespace) -> None:
         _fail("specify an auth action: list or export.")
 
     source = _normalized_source(args.source)
+    if action == "list" and args.agent == "agy":
+        try:
+            accounts = list_agy_accounts(source)
+        except (OSError, ValueError) as exc:
+            _fail(str(exc))
+        if args.json:
+            print(json.dumps([{"id": a.account_id, "email": a.email, "is_current": a.is_current}
+                              for a in accounts], indent=2, ensure_ascii=False))
+        else:
+            print(f"{len(accounts)} agy account(s) in {source}")
+            for index, account in enumerate(accounts, 1):
+                print(f"  [{index}] {account.email}" + ("  <current>" if account.is_current else ""))
+        return
     try:
         credentials = load_codex_credentials(source)
     except (CredentialFormatError, FileNotFoundError, ValueError) as exc:
@@ -1755,6 +1787,10 @@ def _format_choice_body(
     body = f"{name:<16}  {tag}  {home_path}"
     if agent_type == "codex":
         body += f"  {describe_codex_credential(read_env_codex_credential(home_path))}"
+    elif agent_type == "agy":
+        who = login_of(home_path, "agy")
+        if who:
+            body += f"  {who}"
     return body
 
 

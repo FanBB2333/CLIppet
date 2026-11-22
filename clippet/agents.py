@@ -573,6 +573,11 @@ _SPECS += (
             "GEMINI_API_KEY",
             "GOOGLE_GEMINI_BASE_URL",
             "AGY_ADC_AUTH",
+            "AGY_LLM_GATEWAY_*",
+            "ANTIGRAVITY_APP_DATA_DIR",
+            "ANTIGRAVITY_GEMINI_DIR",
+            "ANTIGRAVITY_CONFIG_REL_DIR",
+            "ANTIGRAVITY_CREDENTIAL_SCOPE",
             "GOOGLE_CLOUD_QUOTA_PROJECT",
             "GOOGLE_CLOUD_PROJECT",
             "GOOGLE_CLOUD_LOCATION",
@@ -581,9 +586,8 @@ _SPECS += (
         resume=("--conversation", "{id}"),
         login="/login",
         keychain=(
-            "Antigravity keeps one login per machine in the system keyring. In an env on macOS (and on Linux "
-            "over SSH) it keeps the login in a file in the env instead, so each env has its own; on Linux "
-            "desktops and Windows, logging in or out in any env changes it everywhere."
+            "Import a Cockpit account with 'env import NAME cockpit --agent agy --account EMAIL' "
+            "to keep the OAuth login in the env's own file. Native agy logins can use the system keyring."
         ),
         # its binary is shared (~/.local/bin/agy) but each HOME has its own
         # update lock, so envs could rewrite it at the same time

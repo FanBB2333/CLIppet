@@ -27,6 +27,8 @@ HOST_DIR_VARS: tuple[str, ...] = (
     "XDG_STATE_HOME",
     "XDG_CACHE_HOME",
 )
+if os.name == "nt":
+    HOST_DIR_VARS += ("USERPROFILE",)
 
 #: Prefix of the variables that carry them into the runs CLIppet starts.
 HOST_PREFIX = "CLIPPET_HOST_"

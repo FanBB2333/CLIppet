@@ -46,11 +46,14 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from clippet.agents import AGENTS, SeedSpec
 from clippet.host import host_home
 from clippet.isolation import ISOLATION_SCOPES, copy_tree
+
+if TYPE_CHECKING:
+    from clippet.auth.antigravity import AgyAccount
 
 ENV_TYPE_HOME = "home"
 ENV_TYPE_FILE = "file"
@@ -655,8 +658,9 @@ def clone_home_env(
     entry = _new_home_entry(dst_home, description, list(shared_entries(profile)))
     if env_isolation_scope(profile) is not None:
         entry[ISOLATION_SCOPE_KEY] = env_isolation_scope(profile)
-    if with_auth and isinstance(profile.get("codex_source"), dict):
-        entry["codex_source"] = dict(profile["codex_source"])
+    for key in ("codex_source", "agy_source"):
+        if with_auth and isinstance(profile.get(key), dict):
+            entry[key] = dict(profile[key])
     if with_auth and isinstance(profile.get("vars"), dict):
         # an endpoint and its key are the env's login too
         entry["vars"] = json.loads(json.dumps(profile["vars"]))
@@ -768,6 +772,22 @@ def _source_record(source: str, credential, *, linked: bool) -> dict[str, Any]:
     }
 
 
+def _home_for_import(name: str, agent: str, seed_config: bool, description: str) -> tuple[Path, bool]:
+    validate_env_name(name)
+    envs = load_environments()
+    if name in envs:
+        profile = envs[name]
+        if entry_type(profile) != ENV_TYPE_HOME:
+            raise ValueError(f"Environment '{name}' is a file alias, not a HOME env.")
+        home_dir = Path(profile["home_dir"])
+        home_dir.mkdir(parents=True, exist_ok=True)
+        return home_dir, False
+    home_dir, _ = create_home_env_with_report(
+        name, from_current=seed_config, agents=[agent], description=description,
+    )
+    return home_dir, True
+
+
 def import_codex_credential(
     name: str,
     credential,
@@ -778,22 +798,10 @@ def import_codex_credential(
     seed_config: bool = True,
     description: str = "",
 ) -> tuple[Path, bool]:
-    """Store a Codex credential in env *name*, creating the env if needed.
+    """Store a Codex credential in env *name*, creating the env if needed."""
 
-    Returns ``(home_dir, created)``.  An existing env that already holds a
-    *different* Codex account is only replaced with ``overwrite=True``.
-    """
-
-    validate_env_name(name)
-    envs = load_environments()
-    created = False
-
-    if name in envs:
-        profile = envs[name]
-        if entry_type(profile) != ENV_TYPE_HOME:
-            raise ValueError(f"Environment '{name}' is a file alias, not a HOME env.")
-        home_dir = Path(profile["home_dir"])
-        home_dir.mkdir(parents=True, exist_ok=True)
+    home_dir, created = _home_for_import(name, "codex", seed_config, description)
+    if not created:
         existing = read_env_codex_credential(home_dir)
         if (
             existing is not None
@@ -805,15 +813,6 @@ def import_codex_credential(
                 f"{existing.display_email or existing.display_account_id or '(unknown)'}; "
                 "pass --overwrite to replace it."
             )
-    else:
-        home_dir, _ = create_home_env_with_report(
-            name,
-            from_current=seed_config,
-            agents=["codex"],
-            description=description,
-        )
-        created = True
-
     write_env_codex_credential(home_dir, credential)
     if credential.auth_mode == "apikey" and credential.base_url:
         # auth.json has no place for it; Codex reads it from config.toml
@@ -876,3 +875,83 @@ def sync_linked_codex_credential(name: str, profile: dict) -> SyncResult:
 
     write_env_codex_credential(home_dir, credential)
     return SyncResult("updated", "pulled the latest login from the linked source")
+
+
+def _store_agy_login(home: Path, email: str, login: dict, *, overwrite: bool = False) -> SyncResult:
+    """Install the login atomically, keeping agy's own newer token and session state."""
+    from clippet.auth.antigravity import TOKEN_PATH, login_email
+    from clippet.auth.codex import parse_timestamp
+    from clippet.isolation import _write_private_file
+
+    path = home / TOKEN_PATH
+    if home.resolve() == host_home().resolve() or not _is_within(path, home):
+        raise ValueError("The agy credential must stay inside its isolated HOME.")
+    if path.exists():
+        try:
+            local = json.loads(path.read_text(encoding="utf-8"))
+        except (UnicodeError, ValueError):
+            local = None
+        token = local.get("token") if isinstance(local, dict) else None
+        if isinstance(token, dict):
+            local_email = login_email(local)
+            same = (local_email.casefold() == email.casefold() if local_email
+                    else token.get("refresh_token") == login["token"]["refresh_token"])
+        else:
+            same = False
+        if not same and not overwrite:
+            raise ValueError("The env already holds a different or unrecognized agy login. Use --overwrite to replace it.")
+        if same:
+            old_expiry = parse_timestamp(token.get("expiry"))
+            new_expiry = parse_timestamp(login["token"]["expiry"])
+            if old_expiry and old_expiry > new_expiry and token.get("access_token") and token.get("refresh_token"):
+                return SyncResult("unchanged", "kept the newer login already in the env")
+            # agy can add fields such as its cached user tier to the native file.
+            login = {**local, **login, "token": {**token, **login["token"]}}
+            if local == login:
+                return SyncResult("unchanged", "already has the newest agy login")
+    _write_private_file(path, (json.dumps(login, indent=2) + "\n").encode())
+    return SyncResult("updated", f"stored the agy login for {email}")
+
+
+def import_agy_account(
+    name: str, account: AgyAccount, *, source: str, link: bool = True, overwrite: bool = False,
+    seed_config: bool = True, description: str = "",
+) -> tuple[Path, bool]:
+    """Bind a persistent HOME to a Cockpit account by stable ID."""
+    login = account.native_login()
+    home, created = _home_for_import(name, "agy", seed_config, description)
+    previous = get_environment(name).get("agy_source") or {}
+    if previous and previous.get("source_id") != account.account_id and not overwrite:
+        raise ValueError(f"Env '{name}' is bound to another agy account. Use --overwrite to replace it.")
+    _store_agy_login(home, account.email, login, overwrite=overwrite)
+    update_environment(name, agy_source={
+        "source": "cockpit" if source == "cockpit" else str(account.root),
+        "source_id": account.account_id, "email": account.email, "linked": link,
+    })
+    return home, created
+
+
+def sync_linked_agy_credential(profile: dict) -> SyncResult:
+    """Reload only the bound Cockpit identity. Store reordering cannot change it."""
+    from clippet.auth.antigravity import list_agy_accounts
+
+    record = profile.get("agy_source")
+    if not isinstance(record, dict) or not record.get("linked"):
+        return SyncResult("skipped")
+    source, expected_email = record.get("source"), record.get("email")
+    if not isinstance(source, str) or not isinstance(expected_email, str) or not record.get("source_id"):
+        raise ValueError("Incomplete agy source in the env registry. Import the Cockpit account again.")
+    accounts = list_agy_accounts(source)
+    account = next((a for a in accounts if a.account_id == record["source_id"]), None)
+    if account is None or account.email.casefold() != expected_email.casefold():
+        raise ValueError("The bound agy account is missing or its identity changed in Cockpit.")
+    return _store_agy_login(Path(profile["home_dir"]), account.email, account.native_login())
+
+
+def sync_linked_credentials(name: str, profile: dict) -> list[SyncResult]:
+    results = [sync_linked_codex_credential(name, profile)]
+    try:
+        results.append(sync_linked_agy_credential(profile))
+    except (OSError, ValueError) as exc:
+        results.append(SyncResult("error", str(exc)))
+    return [result for result in results if result.action != "skipped"]

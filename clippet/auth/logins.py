@@ -1,7 +1,7 @@
 """Who an agent is logged in as in a HOME, read from its own files.
 
-Only names are read (an e-mail, a GitHub login, the providers pi has keys
-for), never a token or key.  Anything unexpected reads as "unknown", since
+Only names are returned (an e-mail, a GitHub login, the providers pi has keys
+for). Anything unexpected reads as "unknown", since
 these files are the agents' own state and change between versions.
 """
 
@@ -60,7 +60,13 @@ def _pi(home: Path) -> str | None:
 
 
 def _agy(home: Path) -> str | None:
-    return "signed in" if (home / ".gemini" / "antigravity-cli" / "antigravity-oauth-token").is_file() else None
+    from clippet.auth.antigravity import TOKEN_PATH, login_email
+
+    path = home / TOKEN_PATH
+    if not path.is_file():
+        return None
+    data = _json(path)
+    return (login_email(data) if isinstance(data, dict) else None) or "signed in"
 
 
 def _qoder(home: Path) -> str | None:

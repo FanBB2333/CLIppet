@@ -21,10 +21,13 @@ from typing import Literal
 
 from pydantic import SecretStr
 
+from clippet.adapters.antigravity import AntigravityAdapter
 from clippet.adapters.base import BaseSubprocessAdapter
 from clippet.adapters.claude import ClaudeAdapter
 from clippet.adapters.codex import CodexAdapter
-from clippet.agents import agent_list, agent_spec
+from clippet.agents import AGENTS, agent_list, agent_spec
+from clippet.auth.antigravity import TOKEN_PATH as AGY_TOKEN_PATH, check_bound_login, file_auth_env, select_agy_account
+from clippet.auth.cockpit import is_cockpit_dir
 from clippet.auth.codex import (
     AUTH_MODE_APIKEY,
     FORMAT_NATIVE,
@@ -51,8 +54,8 @@ _CLAUDE_CODE_KEYS = {"effortLevel", "skipDangerousModePermissionPrompt", "permis
 
 
 def detect_config_type(
-    path: Path | str,
-) -> Literal["claude_code", "codex", "clippet", "second_home"]:
+    path: Path | str, agent_type: str | None = None,
+) -> Literal["claude_code", "codex", "agy", "clippet", "second_home"]:
     """Detect the format of a configuration file **or directory**.
 
     Args:
@@ -69,14 +72,18 @@ def detect_config_type(
         json.JSONDecodeError: If the JSON file is not valid JSON.
     """
 
+    if str(path) == "cockpit" or str(path).startswith("cockpit:"):
+        return "agy" if agent_type == "agy" else "codex"
     path = Path(path)
 
     # --- Directory → Cockpit Tools data dir, or second home ----------------
     if path.is_dir():
-        from clippet.auth.cockpit import is_cockpit_dir
-
+        if agent_type == "agy" and is_cockpit_dir(path, agent="agy"):
+            return "agy"
         if is_cockpit_dir(path):
             return "codex"
+        if is_cockpit_dir(path, agent="agy"):
+            return "agy"
         return "second_home"
 
     # --- .env files were Gemini CLI's, which CLIppet no longer runs ---------
@@ -421,6 +428,19 @@ def create_adapter_with_second_home(
         run_env.update(run_vars(home_dir, spec.key))
         if isolation_scope is None:
             isolation_scope = isolation_scope_for_home(home_dir)
+        if spec.key == "agy":
+            from clippet.config.environments import profile_for_home, sync_linked_agy_credential
+
+            found = profile_for_home(home_dir)
+            record = found[1].get("agy_source") if found else None
+            token_file = Path(home_dir) / AGY_TOKEN_PATH
+            if not token_file.resolve().is_relative_to(Path(home_dir)):
+                raise ValueError("The agy login file points outside its env.")
+            if isinstance(record, dict):
+                sync_linked_agy_credential(found[1])
+                check_bound_login(Path(home_dir), record.get("email") or "", run_env)
+            if token_file.is_file():
+                run_env.update(file_auth_env())
     scope_field = {"isolation_scope": isolation_scope} if isolation_scope is not None else {}
     isolation = IsolationConfig(home_dir=home_dir, env_overrides=run_env, **scope_field)
     keeps_home = effective_scope(isolation_scope, spec.key) == SCOPE_AGENT
@@ -492,16 +512,17 @@ def create_adapter_from_config_file(
             "Either -c/--config or --codex-config must be provided."
         )
 
-    if str(config_path) == "cockpit" or str(config_path).startswith("cockpit:"):
-        if agent_type not in (None, "codex"):
-            raise ValueError("Cockpit Tools sources only provide Codex accounts.")
-        return create_adapter_from_codex_config(
-            config_path=str(config_path),
-            config_toml_path=codex_config_path,
-            account=account,
-        )
-
-    detected = detect_config_type(config_path)
+    detected = detect_config_type(config_path, agent_type)
+    if detected == "agy":
+        if agent_type not in (None, "agy") or codex_config_path:
+            raise ValueError("An agy credential source requires agy and is incompatible with --codex-config.")
+        selected = select_agy_account(config_path, account)
+        return AntigravityAdapter(default_isolation=IsolationConfig(
+            credential_contents={AGY_TOKEN_PATH: SecretStr(json.dumps(selected.native_login()))},
+            env_overrides={**AGENTS["agy"].run_env, **file_auth_env()},
+        ))
+    if (str(config_path) == "cockpit" or str(config_path).startswith("cockpit:")) and agent_type not in (None, "codex"):
+        raise ValueError("Select codex or agy for Cockpit Tools accounts.")
 
     # --- Second-home (directory) -------------------------------------------
     if detected == "second_home":

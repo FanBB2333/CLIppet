@@ -1,8 +1,7 @@
 """Identity layer: agent credentials in their many storage formats.
 
-Currently covers Codex (OpenAI) credentials — see :mod:`clippet.auth.codex`
-for the supported formats and :mod:`clippet.auth.cockpit` for reading the
-Cockpit Tools account store.
+See :mod:`clippet.auth.codex` for Codex credentials and
+:mod:`clippet.auth.antigravity` for Cockpit Tools agy accounts.
 """
 
 from clippet.auth.codex import (

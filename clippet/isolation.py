@@ -163,6 +163,7 @@ class IsolatedEnvironment:
         *,
         scope: str = SCOPE_HOME,
         config_dirs: Mapping[str, str] | None = None,
+        home_aliases: tuple[str, ...] = (),
         environ: Mapping[str, str] | None = None,
     ) -> None:
         if scope not in ISOLATION_SCOPES:
@@ -183,6 +184,7 @@ class IsolatedEnvironment:
         self._env_blacklist = list(env_blacklist) if env_blacklist is not None else None
         self._scrub_env = tuple(scrub_env or ())
         self._scope = scope
+        self._home_aliases = home_aliases
         self._config_dirs = dirs if scope == SCOPE_AGENT else {}
         self._environ = environ
         self._home_dir: Path | None = None
@@ -356,7 +358,7 @@ class IsolatedEnvironment:
 
         env.update(self._env_overrides)
 
-        managed = {"HOME": str(self.process_home)}
+        managed = {name: str(self.process_home) for name in ("HOME", *self._home_aliases)}
         managed.update({variable: str(folder) for variable, folder in self.config_dirs.items()})
         managed.update(own.context())
         self._managed = managed

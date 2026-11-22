@@ -1,4 +1,4 @@
-"""Read Codex accounts from Cockpit Tools' local account store (read-only).
+"""Read Codex accounts and decrypt local Cockpit Tools account files.
 
 Cockpit Tools (https://github.com/jlcodes99/cockpit-tools) keeps one file per
 account under ``<data dir>/codex_accounts/`` and an index in
@@ -40,35 +40,38 @@ ACCOUNTS_DIR = "codex_accounts"
 KEY_FILE = "secure-account-storage.key"
 
 
-def is_cockpit_dir(path: Path | str) -> bool:
+def is_cockpit_dir(path: Path | str, *, agent: str = "codex") -> bool:
     """Return True if *path* looks like a Cockpit Tools data directory."""
 
     path = Path(path)
+    if agent == "agy":
+        return (path / "antigravity_accounts.sqlite").is_file() or (
+            (path / "accounts.json").is_file() and (path / "accounts").is_dir()
+        )
     return (path / INDEX_FILE).is_file() or (
         (path / ACCOUNTS_DIR).is_dir() and (path / KEY_FILE).is_file()
     )
 
 
-def find_cockpit_dir(explicit: str | Path | None = None) -> Path:
+def find_cockpit_dir(explicit: str | Path | None = None, *, agent: str = "codex") -> Path:
     """Locate the Cockpit Tools data directory.
 
     Order: explicit argument, ``$CLIPPET_COCKPIT_DIR``, ``~/.antigravity_cockpit``,
     ``~/.cockpit_tools``.
     """
 
-    candidates: list[Path] = []
-    if explicit:
-        candidates.append(Path(explicit).expanduser())
+    candidates = [Path(explicit).expanduser()] if explicit else []
     env_dir = os.environ.get(COCKPIT_DIR_ENV)
-    if env_dir:
-        candidates.append(Path(env_dir).expanduser())
-    candidates.extend(host_home() / name for name in DEFAULT_COCKPIT_DIRS)  # yours, also inside an env's run
+    if agent == "codex" or not explicit:
+        if env_dir:
+            candidates.append(Path(env_dir).expanduser())
+        candidates.extend(host_home() / name for name in DEFAULT_COCKPIT_DIRS)
 
     for candidate in candidates:
-        if is_cockpit_dir(candidate):
+        if is_cockpit_dir(candidate, agent=agent):
             return candidate
     if explicit:
-        raise FileNotFoundError(f"'{explicit}' is not a Cockpit Tools data directory.")
+        raise FileNotFoundError(f"'{explicit}' is not a Cockpit Tools {agent} account store.")
     raise FileNotFoundError(
         "Cockpit Tools data directory not found (looked for ~/.antigravity_cockpit "
         f"and ~/.cockpit_tools). Set {COCKPIT_DIR_ENV} or pass cockpit:<dir>."
